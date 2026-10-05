@@ -1,0 +1,16 @@
+.env
+.env-*
+.secrets/
+.git/
+.venv/
+data/
+logs/
+tests/
+docs/
+__pycache__/
+*.py[cod]
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*client_secret*.json
+*token*.json

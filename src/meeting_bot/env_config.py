@@ -5,6 +5,9 @@ import os
 import re
 from pathlib import Path
 
+if os.name != "nt":
+    import fcntl
+
 
 ENV_FILE = Path.cwd() / ".env"
 KEY_PATTERN = re.compile(r"[A-Z][A-Z0-9_]*\Z")
@@ -33,8 +36,12 @@ def read_env(path: Path = ENV_FILE, *, required: bool = True) -> dict[str, str]:
         if required:
             raise RuntimeError("Local .env file is missing")
         return {}
+    with path.open("r", encoding="utf-8-sig") as stream:
+        if os.name != "nt":
+            fcntl.flock(stream.fileno(), fcntl.LOCK_SH)
+        lines = stream.read().splitlines()
     values: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8-sig").splitlines():
+    for line in lines:
         entry = _entry(line)
         if entry is None:
             continue
@@ -54,30 +61,32 @@ def write_env_values(path: Path, updates: dict[str, str]) -> None:
     """Update only .env, preserving unrelated settings and comments."""
     if any(not KEY_PATTERN.fullmatch(key) for key in updates):
         raise ValueError("Invalid .env key")
-    old_lines = path.read_text(encoding="utf-8-sig").splitlines() if path.exists() else []
-    seen: set[str] = set()
-    new_lines: list[str] = []
-    for line in old_lines:
-        entry = _entry(line)
-        if entry is None:
-            new_lines.append(line)
-            continue
-        key, _ = entry
-        if key in seen:
-            raise ValueError("Duplicate .env key")
-        seen.add(key)
-        if key in updates:
-            new_lines.append(f"{key}={json.dumps(updates[key], ensure_ascii=False)}")
-        else:
-            new_lines.append(line)
-    for key, value in updates.items():
-        if key not in seen:
-            new_lines.append(f"{key}={json.dumps(value, ensure_ascii=False)}")
     path.parent.mkdir(parents=True, exist_ok=True)
     existed = path.exists()
-    with path.open("r+" if existed else "x", encoding="utf-8", newline="\n") as stream:
+    with path.open("r+" if existed else "x+", encoding="utf-8", newline="\n") as stream:
+        if os.name != "nt":
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
         if os.name != "nt" and not existed:
             os.fchmod(stream.fileno(), 0o600)
+        old_lines = stream.read().lstrip("\ufeff").splitlines()
+        seen: set[str] = set()
+        new_lines: list[str] = []
+        for line in old_lines:
+            entry = _entry(line)
+            if entry is None:
+                new_lines.append(line)
+                continue
+            key, _ = entry
+            if key in seen:
+                raise ValueError("Duplicate .env key")
+            seen.add(key)
+            if key in updates:
+                new_lines.append(f"{key}={json.dumps(updates[key], ensure_ascii=False)}")
+            else:
+                new_lines.append(line)
+        for key, value in updates.items():
+            if key not in seen:
+                new_lines.append(f"{key}={json.dumps(value, ensure_ascii=False)}")
         stream.seek(0)
         stream.write("\n".join(new_lines) + "\n")
         stream.truncate()

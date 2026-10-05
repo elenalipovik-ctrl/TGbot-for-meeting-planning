@@ -1,4 +1,4 @@
-"""Verify that Google OAuth values occur only in the local .env file."""
+"""Verify that Google and Telegram credentials occur only in .env."""
 
 from pathlib import Path
 
@@ -7,9 +7,10 @@ from meeting_bot.env_config import read_env
 
 root = Path.cwd().resolve()
 values = read_env(root / ".env")
-keys = ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN")
+keys = ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN",
+        "TELEGRAM_BOT_TOKEN")
 if any(not values.get(key) for key in keys):
-    raise SystemExit("Google OAuth settings are incomplete in .env")
+    raise SystemExit("Google or Telegram settings are incomplete in .env")
 if (root / ".secrets").exists() or list(root.glob(".env-*")):
     raise SystemExit("Legacy or temporary credential files remain")
 
@@ -24,4 +25,4 @@ for path in root.rglob("*"):
         matches.append(str(path.relative_to(root)))
 if matches:
     raise SystemExit("Google OAuth values found outside .env in: " + ", ".join(matches))
-print("Google OAuth values are present only in the local .env")
+print("Google and Telegram credentials are present only in the local .env")

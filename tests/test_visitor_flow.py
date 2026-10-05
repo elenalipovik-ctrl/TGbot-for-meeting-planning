@@ -92,7 +92,7 @@ def finish_form(flow, visitor, now, username="guest", email="guest@example.org")
 def test_first_request_and_status_and_cancel(setup_flow):
     service, calendar, flow, now = setup_flow
     allow(service, flow, 101, now)
-    assert "Напишите ваше имя" in to_contact_form(flow, 101, now).text
+    assert "Напишите, как к вам обращаться" in to_contact_form(flow, 101, now).text
     review = finish_form(flow, 101, now)
     assert "МСК" in review.text and "Обсудить проект" in review.text
     sent = action(flow, 101, "guest", "send", now)

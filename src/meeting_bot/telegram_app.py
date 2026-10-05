@@ -5,9 +5,11 @@ import logging
 import time
 from pathlib import Path
 
-from aiogram import Bot, Dispatcher, F, Router
+from aiogram import Dispatcher, F, Router
+from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError
 from aiogram.filters import Command, CommandStart
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (BotCommand, CallbackQuery, InlineKeyboardButton,
+                           InlineKeyboardMarkup, MenuButtonCommands, Message)
 
 from .admin_flow import AdminFlow
 from .env_config import ENV_FILE, read_env
@@ -15,6 +17,7 @@ from .google_auth import calendar_from_env
 from .runtime_mode import allowed_test_users
 from .service import BookingService
 from .technical_log import configure_logging, log_event
+from .telegram_transport import telegram_bot
 from .visitor_flow import Reply, VisitorFlow
 
 
@@ -30,6 +33,25 @@ def _markup(reply: Reply) -> InlineKeyboardMarkup | None:
 def _username(message_or_query: Message | CallbackQuery) -> str | None:
     user = message_or_query.from_user
     return user.username if user else None
+
+
+async def _acknowledge_callback(query: CallbackQuery, logger: logging.Logger) -> None:
+    try:
+        await asyncio.wait_for(query.answer(), timeout=3.0)
+    except (TelegramBadRequest, TelegramNetworkError, TimeoutError) as error:
+        # An expired acknowledgement must not discard the user's button press.
+        log_event(logger, "telegram_callback_ack_failed", code=type(error).__name__)
+
+
+async def _configure_command_menu(bot, logger: logging.Logger) -> None:
+    """Show a discoverable way back to the dialog in an existing Telegram chat."""
+    try:
+        await bot.set_my_commands([BotCommand(command="start", description="Открыть меню")])
+        await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+        log_event(logger, "telegram_command_menu_ready")
+    except (TelegramBadRequest, TelegramNetworkError, TimeoutError) as error:
+        # A temporary Bot API failure must not prevent the booking bot from starting.
+        log_event(logger, "telegram_command_menu_failed", code=type(error).__name__)
 
 
 def build_router(flow: VisitorFlow, admin_flow: AdminFlow | None = None,
@@ -65,7 +87,7 @@ def build_router(flow: VisitorFlow, admin_flow: AdminFlow | None = None,
 
     @router.callback_query(F.message.chat.type == "private")
     async def callback(query: CallbackQuery) -> None:
-        await query.answer()
+        await _acknowledge_callback(query, flow.service.logger)
         if query.from_user is None or not permitted(query.from_user.id) or \
                 not isinstance(query.message, Message):
             return
@@ -123,9 +145,10 @@ async def run() -> None:
     dispatcher = Dispatcher()
     dispatcher.include_router(build_router(flow, admin_flow, allowed_user_ids))
     logging.getLogger("aiogram").setLevel(logging.WARNING)
-    bot = Bot(token=values["TELEGRAM_BOT_TOKEN"])
+    bot = telegram_bot(values["TELEGRAM_BOT_TOKEN"])
     log_event(logger, "telegram_polling_started")
     try:
+        await _configure_command_menu(bot, logger)
         await dispatcher.start_polling(bot, allowed_updates=dispatcher.resolve_used_update_types())
     finally:
         await bot.session.close()

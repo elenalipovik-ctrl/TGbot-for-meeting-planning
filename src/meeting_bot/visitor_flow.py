@@ -211,7 +211,7 @@ class VisitorFlow:
                           _row(("Изменить данные", "edit"), ("Отмена", "stop"))))
         self._save(visitor_id, "name", now, booking_id=booking_id,
                    used_saved_contacts=0)
-        return Reply("Напишите ваше имя.", (_row(("Отмена", "stop")),))
+        return Reply("Напишите, как к вам обращаться.", (_row(("Отмена", "stop")),))
 
     def _review(self, visitor_id: int, dialog, now: int) -> Reply:
         booking = self._one(
@@ -428,7 +428,7 @@ class VisitorFlow:
         if step == "reuse" and action in ("reuse", "edit"):
             if action == "edit":
                 self._save(visitor_id, "name", now, used_saved_contacts=0)
-                return Reply("Напишите ваше имя.", (_row(("Отмена", "stop")),))
+                return Reply("Напишите, как к вам обращаться.", (_row(("Отмена", "stop")),))
             saved = self.service.saved_contacts(visitor_id, visitor_id)
             if not saved:
                 return self._stale()

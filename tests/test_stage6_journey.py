@@ -81,7 +81,7 @@ def test_full_journey_survives_restart_and_delivers_telegram(tmp_path):
     reply = visit("v:telemost")
     reply = visit(button(reply, "day:"))
     reply = visit(button(reply, "time:"))
-    assert "Напишите ваше имя" in reply.text
+    assert "Напишите, как к вам обращаться" in reply.text
     visit("text", "Гость")
     visit("text", "guest@example.test")
     visit("phone:skip")

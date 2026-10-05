@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import Callable
 from zoneinfo import ZoneInfo
 
-from aiogram import Bot
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from .database import connect
 from .technical_log import log_event
+from .telegram_transport import telegram_bot
 
 
 @dataclass(frozen=True)
@@ -89,7 +90,7 @@ def render_notice(path: Path, notice: Notice, administrator_id: int) -> tuple[in
                 f"(ID {notice.visitor_id}). Откройте /admin → Запросы доступа.")
         recipient = administrator_id
     elif kind.startswith("access_"):
-        labels = {"access_allowed": "Доступ к записи открыт.",
+        labels = {"access_allowed": "Доступ к записи открыт. Нажмите «Записаться» ниже или отправьте /start.",
                   "access_rejected": "Запрос доступа отклонён.",
                   "access_blocked": "Доступ к записи заблокирован."}
         text = labels.get(kind, "Статус доступа изменён.")
@@ -134,11 +135,15 @@ def render_notice(path: Path, notice: Notice, administrator_id: int) -> tuple[in
     return int(recipient), text
 
 
-def send_telegram(token: str, recipient: int, text: str) -> None:
+def send_telegram(token: str, recipient: int, text: str,
+                  *, action: str | None = None) -> None:
     async def deliver():
-        bot = Bot(token=token)
+        bot = telegram_bot(token)
         try:
-            await bot.send_message(recipient, text)
+            markup = (InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="Записаться", callback_data="book")
+            ]]) if action == "book" else None)
+            await bot.send_message(recipient, text, reply_markup=markup)
         finally:
             await bot.session.close()
     asyncio.run(deliver())
@@ -191,8 +196,13 @@ def run_due_notifications(path: Path, now: int, settings: dict[str, str],
             recipient, message = render_notice(path, notice, int(settings["BOT_ADMIN_ID"]))
             if allowed_recipients is not None and recipient not in allowed_recipients:
                 raise PermissionError("Local test recipient is outside the allowlist")
-            (telegram_send or (lambda ident, text: send_telegram(
-                settings["TELEGRAM_BOT_TOKEN"], ident, text)))(recipient, message)
+            if telegram_send is not None:
+                telegram_send(recipient, message)
+            else:
+                send_telegram(
+                    settings["TELEGRAM_BOT_TOKEN"], recipient, message,
+                    action="book" if notice.kind == "access_allowed" else None,
+                )
             _mark_sent(path, notice.id, now, logger)
             completed += 1
         except Exception as error:

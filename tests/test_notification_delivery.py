@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 from meeting_bot.admin_flow import AdminFlow
 from meeting_bot.database import connect
+from meeting_bot import notification_delivery
 from meeting_bot.notification_delivery import run_due_notifications
 from meeting_bot.service import BookingService
 from meeting_bot.technical_log import configure_logging
@@ -53,6 +54,31 @@ def test_telegram_render_from_persistent_queue(tmp_path):
                                   "WHERE channel != 'telegram'").fetchone()[0] == 0
         assert connection.execute("SELECT status FROM bookings WHERE id = ?",
                                   (booking,)).fetchone()[0] == "pending"
+
+
+def test_access_approval_notice_offers_booking_button(tmp_path, monkeypatch):
+    service, _, now = pending_booking(tmp_path)
+    sent = []
+
+    class FakeSession:
+        async def close(self):
+            pass
+
+    class FakeBot:
+        def __init__(self, token):
+            self.session = FakeSession()
+
+        async def send_message(self, recipient, text, reply_markup=None):
+            sent.append((recipient, text, reply_markup))
+
+    monkeypatch.setattr(notification_delivery, "telegram_bot", FakeBot)
+    run_due_notifications(
+        service.path, now, {"BOT_ADMIN_ID": str(ADMIN), "TELEGRAM_BOT_TOKEN": "test"}
+    )
+    approval = [(text, markup) for recipient, text, markup in sent
+                if recipient == VISITOR and "Доступ к записи открыт" in text]
+    assert len(approval) == 1
+    assert approval[0][1].inline_keyboard[0][0].callback_data == "book"
 
 
 def test_telegram_failure_retries_after_restart_without_changing_booking(tmp_path):

@@ -1,0 +1,47 @@
+name: meeting-bot
+
+x-app: &app
+  build:
+    context: .
+  image: meeting-bot:local
+  restart: unless-stopped
+  init: true
+  user: "10001:10001"
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  pids_limit: 128
+  stop_grace_period: 30s
+  volumes:
+    - type: bind
+      source: ./.env
+      target: /app/.env
+      # Google may rotate the refresh token; it is persisted only in this file.
+      read_only: false
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./data
+      target: /app/data
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ./logs
+      target: /app/logs
+      bind:
+        create_host_path: false
+  logging:
+    driver: local
+    options:
+      max-size: "1m"
+      max-file: "3"
+
+services:
+  bot:
+    <<: *app
+    command: ["python", "scripts/run_server.py", "bot"]
+  worker:
+    <<: *app
+    command: ["python", "scripts/run_server.py", "worker"]
