@@ -1,0 +1,15 @@
+.venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+data/
+logs/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.env
+.env-*
+.secrets/
+*client_secret*.json
+*token*.json
+*.egg-info/
