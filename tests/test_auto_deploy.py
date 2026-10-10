@@ -1,3 +1,5 @@
+import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -52,6 +54,32 @@ def test_infrastructure_and_migrations_require_manual_deploy(tmp_path, monkeypat
         "ALTER TABLE x ADD z;", encoding="utf-8"
     )
     assert auto_deploy.manual_change_reason(candidate) == "manual_migration_change"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permissions are tested in CI")
+def test_build_context_is_readable_by_unprivileged_image_user(tmp_path, monkeypatch):
+    live = tmp_path / "live"
+    source = tmp_path / "source"
+    (source / "src" / "meeting_bot").mkdir(parents=True)
+    (source / "scripts").mkdir()
+    live.mkdir()
+    for name in ("Dockerfile", ".dockerignore"):
+        (live / name).write_text(name, encoding="utf-8")
+    for name in ("pyproject.toml", "README.md"):
+        (source / name).write_text(name, encoding="utf-8")
+    for name in ("check_server_readiness.py", "run_server.py"):
+        (source / "scripts" / name).write_text(name, encoding="utf-8")
+    package = source / "src" / "meeting_bot"
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    package.chmod(0o700)
+    (package / "__init__.py").chmod(0o600)
+    monkeypatch.setattr(auto_deploy, "APP", live)
+
+    target = tmp_path / "build"
+    auto_deploy.build_context(source, target)
+    assert stat.S_IMODE((target / "src" / "meeting_bot").stat().st_mode) == 0o755
+    assert stat.S_IMODE((target / "src" / "meeting_bot" / "__init__.py").stat().st_mode) == 0o644
+    assert stat.S_IMODE((target / "scripts").stat().st_mode) == 0o755
 
 
 def test_failed_start_restores_old_image(tmp_path, monkeypatch):

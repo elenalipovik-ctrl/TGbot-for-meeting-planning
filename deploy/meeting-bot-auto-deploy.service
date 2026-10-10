@@ -10,5 +10,6 @@ User=root
 UMask=0077
 NoNewPrivileges=true
 ProtectHome=true
+Environment=DOCKER_CONFIG=/opt/meeting-bot-deploy/docker-config
 ExecStart=/usr/bin/python3 /opt/meeting-bot-deploy/auto_deploy.py
 TimeoutStartSec=12min

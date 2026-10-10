@@ -208,6 +208,12 @@ def build_context(source: Path, target: Path) -> None:
     (target / "scripts").mkdir()
     for name in ("check_server_readiness.py", "run_server.py"):
         shutil.copy2(source / "scripts" / name, target / "scripts" / name)
+    # The service uses UMask=0077. The image runs as uid 10001, so copied
+    # public source files must remain readable inside the built image.
+    for item in target.rglob("*"):
+        if item.is_symlink():
+            raise AutoDeployError("build_context_symlink")
+        item.chmod(0o755 if item.is_dir() else 0o644)
 
 
 def preflight(image: str) -> None:
@@ -273,31 +279,39 @@ def write_baseline(sha: str) -> None:
 
 
 def deploy(sha: str, baseline: str) -> None:
+    log("checking_resources", sha)
     check_resources()
     with tempfile.TemporaryDirectory(prefix="candidate-", dir=CONTROL) as temp_name:
         temp = Path(temp_name)
         source = temp / "source"
+        log("fetching_source", sha)
         command(
             "git", "-c", "credential.helper=", "clone", "--quiet",
             "--single-branch", "--branch", "main", REPOSITORY, str(source),
             timeout=120,
         )
+        log("validating_source", sha)
         validate_source(source, baseline, sha)
+        log("checking_manual_changes", sha)
         reason = manual_change_reason(source)
         if reason:
             raise AutoDeployError(reason)
         context = temp / "build"
         build_context(source, context)
         candidate = f"meeting-bot:candidate-{sha[:12]}"
+        log("building_candidate", sha)
         command("docker", "build", "--tag", candidate, str(context), timeout=480)
         try:
+            log("preflighting_candidate", sha)
             preflight(candidate)
             old_id = image_id(IMAGE)
             new_id = image_id(candidate)
             command("docker", "tag", old_id, ROLLBACK_IMAGE)
             command("docker", "tag", candidate, IMAGE)
             try:
+                log("starting_containers", sha)
                 compose_up()
+                log("checking_containers", sha)
                 check_running(new_id)
             except (AutoDeployError, ValueError, sqlite3.Error) as error:
                 command("docker", "tag", old_id, IMAGE)
