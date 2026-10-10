@@ -1,0 +1,14 @@
+[Unit]
+Description=Deploy tested meeting bot commits from GitHub
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+NoNewPrivileges=true
+ProtectHome=true
+ExecStart=/usr/bin/python3 /opt/meeting-bot-deploy/auto_deploy.py
+TimeoutStartSec=12min

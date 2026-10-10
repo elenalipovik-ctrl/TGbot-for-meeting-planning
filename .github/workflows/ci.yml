@@ -1,0 +1,32 @@
+name: Verify meeting bot
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reject tracked secrets and databases
+        run: |
+          unsafe=$(git ls-files | grep -Ei '(^|/)(\.env($|\.[^/]+)|\.secrets/|data/|logs/)|\.(sqlite|sqlite-wal|sqlite-shm|pem|key)$' | grep -Ev '(^|/)\.env\.example$' || true)
+          if [ -n "$unsafe" ]; then
+            echo 'Sensitive file path is tracked'
+            exit 1
+          fi
+      - name: Install dependencies
+        run: python -m pip install -e '.[test]'
+      - name: Run tests
+        run: python -m pytest -q
+      - name: Compile source
+        run: python -m compileall -q src scripts

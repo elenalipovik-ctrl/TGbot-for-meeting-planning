@@ -43,6 +43,10 @@ def code_archive() -> tuple[bytes, int]:
     paths = [ROOT / name for name in (
         ".dockerignore", "Dockerfile", "compose.yaml", "pyproject.toml", "README.md",
         "scripts/check_server_readiness.py", "scripts/run_server.py",
+        "scripts/set_server_public_mode.py", "public_site/index.html",
+        "public_site/privacy/index.html",
+        "scripts/auto_deploy.py", "deploy/meeting-bot-auto-deploy.service",
+        "deploy/meeting-bot-auto-deploy.timer",
     )]
     paths.extend(
         path for path in (ROOT / "src").rglob("*")
