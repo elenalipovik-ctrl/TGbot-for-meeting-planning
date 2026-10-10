@@ -1,0 +1,215 @@
+<div id="meet-ma0v">
+  <style>
+    #meet-ma0v .ma-stage {padding:18px 0 28px;display:flex;justify-content:center;min-height:760px}
+    #meet-ma0v .ma-phone {--ma-bg:#080e20;--ma-card:#111d36;--ma-raised:#1a3153;--ma-text:#f2f5fc;--ma-muted:#b3c1d8;--ma-line:#304666;--ma-primary:#1469d2;--ma-on:#fff;--ma-glow:#79d6ff;--ma-ok:#9ae0bc;--ma-warn:#ffda95;--ma-danger:#ffb0b5;--ma-width:390px;--ma-radius:20px;color:var(--ma-text);background:var(--ma-bg);width:min(100%,var(--ma-width));min-width:0;border:1px solid var(--ma-line);border-radius:26px;font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 20px 55px #0003;overflow-wrap:anywhere;overflow:hidden;align-self:flex-start}
+    #meet-ma0v .ma-phone[data-theme="light"] {--ma-bg:#edf3fc;--ma-card:#fff;--ma-raised:#e1edff;--ma-text:#13233e;--ma-muted:#485e7c;--ma-line:#bdcde3;--ma-glow:#2579c0;--ma-ok:#17603d;--ma-warn:#725000;--ma-danger:#a62235}
+    #meet-ma0v .ma-phone * {box-sizing:border-box}
+    #meet-ma0v .ma-phone button,#meet-ma0v .ma-phone input,#meet-ma0v .ma-phone textarea,#meet-ma0v .ma-phone select {font:inherit}
+    #meet-ma0v .ma-tg {display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--ma-line);background:var(--ma-bg)}
+    #meet-ma0v .ma-tg > div {min-width:0;flex:1}
+    #meet-ma0v .ma-tg b {font-size:18px;line-height:1.2;font-weight:650;display:block}
+    #meet-ma0v .ma-tg small {font-size:12px;color:var(--ma-muted);display:block}
+    #meet-ma0v .ma-close {border:0;color:var(--ma-text);background:transparent;min-width:44px;min-height:44px;font-size:24px}
+    #meet-ma0v .ma-tg .ma-dots {margin-left:auto;color:var(--ma-muted)}
+    #meet-ma0v .ma-body {padding:20px 18px 22px;min-height:570px;display:flex;flex-direction:column;gap:16px}
+    #meet-ma0v .ma-phone.compact .ma-body {padding:16px 16px 22px;gap:12px}
+    #meet-ma0v .ma-phone h1 {font-size:27px;line-height:1.18;letter-spacing:-.7px;font-weight:650;margin:0}
+    #meet-ma0v .ma-phone h2 {font-size:19px;line-height:1.3;font-weight:600;margin:0}
+    #meet-ma0v .ma-phone p {margin:0}
+    #meet-ma0v .ma-phone .ma-muted {color:var(--ma-muted);font-size:14px}
+    #meet-ma0v .ma-phone .ma-caption {font-size:12px;color:var(--ma-muted)}
+    #meet-ma0v .ma-row {display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:wrap}
+    #meet-ma0v .ma-between {justify-content:space-between}
+    #meet-ma0v .ma-stack {display:flex;flex-direction:column;gap:10px}
+    #meet-ma0v .ma-panel {background:var(--ma-card);border:1px solid var(--ma-line);border-radius:var(--ma-radius);padding:17px;min-width:0}
+    #meet-ma0v .ma-phone:not(.compact) .ma-panel {background:linear-gradient(145deg,var(--ma-raised),var(--ma-card) 75%)}
+    #meet-ma0v .ma-phone.compact .ma-panel {padding:14px;border-radius:14px}
+    #meet-ma0v .ma-hero {position:relative;padding:21px 18px;background:radial-gradient(ellipse at 95% 0%,var(--ma-raised),var(--ma-card) 70%);border:1px solid var(--ma-line);border-radius:var(--ma-radius);overflow:hidden}
+    #meet-ma0v .ma-hero h1 {position:relative;max-width:260px}
+    #meet-ma0v .ma-hero p {position:relative;margin-top:12px;max-width:250px}
+    #meet-ma0v .ma-orbit {position:absolute;width:150px;height:65px;border:1px solid var(--ma-glow);border-radius:50%;right:-40px;top:24px;transform:rotate(-32deg);opacity:.3;box-shadow:0 0 25px var(--ma-glow)}
+    #meet-ma0v .ma-phone.compact .ma-hero {padding:0;border:0;background:none;border-radius:0}
+    #meet-ma0v .ma-phone.compact .ma-orbit {display:none}
+    #meet-ma0v .ma-label {font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ma-muted);margin-bottom:10px;display:block}
+    #meet-ma0v .ma-label::before {content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ma-glow);margin-right:7px}
+    #meet-ma0v .ma-button {display:flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--ma-line);border-radius:13px;background:var(--ma-card);color:var(--ma-text);min-height:48px;padding:11px 15px;text-decoration:none;text-align:center;font-weight:500;width:100%}
+    #meet-ma0v .ma-button.primary {background:var(--ma-primary);border-color:var(--ma-primary);color:var(--ma-on)}
+    #meet-ma0v .ma-button.ghost {background:transparent;border-color:transparent;color:var(--ma-muted)}
+    #meet-ma0v .ma-button.danger {color:var(--ma-danger)}
+    #meet-ma0v .ma-button:disabled {opacity:.45}
+    #meet-ma0v .ma-button:focus-visible,#meet-ma0v .ma-choice:focus-visible,#meet-ma0v input:focus-visible,#meet-ma0v textarea:focus-visible {outline:2px solid var(--ma-glow);outline-offset:3px}
+    #meet-ma0v .ma-choice {display:block;text-align:left;border:1px solid var(--ma-line);background:var(--ma-card);color:var(--ma-text);border-radius:13px;padding:12px;min-height:48px;min-width:0}
+    #meet-ma0v .ma-choice[aria-pressed="true"] {border-color:var(--ma-glow);background:var(--ma-raised);box-shadow:inset 0 0 0 1px var(--ma-glow)}
+    #meet-ma0v .ma-choice:disabled {opacity:.4}
+    #meet-ma0v .ma-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+    #meet-ma0v .ma-grid.two {grid-template-columns:repeat(2,minmax(0,1fr))}
+    #meet-ma0v .ma-grid .ma-choice {text-align:center;padding:10px 5px}
+    #meet-ma0v .ma-field {display:flex;flex-direction:column;gap:6px;font-size:14px;color:var(--ma-text)}
+    #meet-ma0v .ma-field input,#meet-ma0v .ma-field textarea,#meet-ma0v .ma-field select {width:100%;min-width:0;background:var(--ma-bg);color:var(--ma-text);border:1px solid var(--ma-line);border-radius:11px;padding:12px;font-size:16px;min-height:48px}
+    #meet-ma0v .ma-field textarea {resize:vertical;min-height:90px}
+    #meet-ma0v .ma-progress {display:flex;gap:5px;margin-bottom:2px}
+    #meet-ma0v .ma-progress span {height:3px;flex:1;background:var(--ma-line);border-radius:2px}
+    #meet-ma0v .ma-progress span.on {background:var(--ma-glow)}
+    #meet-ma0v .ma-back {border:0;background:none;color:var(--ma-muted);text-align:left;padding:3px 0;min-height:44px;align-self:flex-start}
+    #meet-ma0v .ma-actions {margin-top:auto;display:flex;flex-direction:column;gap:7px;padding-top:8px}
+    #meet-ma0v .ma-badge {display:inline-flex;align-items:center;gap:6px;font-size:12px;border-radius:20px;padding:5px 10px;background:var(--ma-raised);color:var(--ma-muted)}
+    #meet-ma0v .ma-badge.warn {color:var(--ma-warn)}
+    #meet-ma0v .ma-badge.ok {color:var(--ma-ok)}
+    #meet-ma0v .ma-badge.issue {color:var(--ma-danger)}
+    #meet-ma0v .ma-details {display:grid;grid-template-columns:1fr;gap:12px;margin:0}
+    #meet-ma0v .ma-details div {border-bottom:1px solid var(--ma-line);padding-bottom:10px}
+    #meet-ma0v .ma-details div:last-child {border:0;padding:0}
+    #meet-ma0v .ma-details dt {font-size:12px;color:var(--ma-muted)}
+    #meet-ma0v .ma-details dd {margin:3px 0 0;font-size:15px}
+    #meet-ma0v .ma-note {border-left:2px solid var(--ma-glow);padding-left:12px;color:var(--ma-muted);font-size:13px}
+    #meet-ma0v .ma-menu {display:flex;width:100%;align-items:center;justify-content:space-between;text-align:left;gap:10px;border:0;border-bottom:1px solid var(--ma-line);background:none;color:var(--ma-text);padding:15px 0;min-height:48px}
+    #meet-ma0v .ma-menu:last-child {border:0}
+    #meet-ma0v .ma-tabs {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;background:var(--ma-card);padding:4px;border-radius:12px}
+    #meet-ma0v .ma-tabs button {border:0;background:transparent;color:var(--ma-muted);min-height:44px;padding:5px;font-size:12px;border-radius:9px;overflow-wrap:normal}
+    #meet-ma0v .ma-tabs button[aria-pressed="true"] {background:var(--ma-raised);color:var(--ma-text)}
+    #meet-ma0v .ma-check {display:flex;align-items:flex-start;gap:10px;font-size:13px}
+    #meet-ma0v .ma-check input {width:20px;height:20px;flex-shrink:0;accent-color:var(--ma-primary);margin-top:2px}
+    #meet-ma0v .ma-error {color:var(--ma-danger);font-size:13px}
+    #meet-ma0v .ma-success {font-size:32px;color:var(--ma-ok)}
+    #meet-ma0v .ma-role-switch {font-size:13px;color:var(--ma-muted);text-align:center}
+    #meet-ma0v .ma-top-controls {margin-bottom:10px}
+    #meet-ma0v [hidden] {display:none!important}
+    @media(max-width:350px){#meet-ma0v .ma-body{padding:16px 14px}#meet-ma0v .ma-phone h1{font-size:25px}#meet-ma0v .ma-panel{padding:14px}}
+    @media(prefers-reduced-motion:reduce){#meet-ma0v *{scroll-behavior:auto}}
+  </style>
+  <div class="viz-controls ma-top-controls">
+    <label class="form-label">Экран
+      <select class="form-select" data-preview-screen aria-label="Экран макета">
+        <option value="home">Главная</option><option value="template">Шаблон встречи</option><option value="format">Длительность и связь</option><option value="time">Дата и время</option><option value="contacts">Контакты и цель</option><option value="review">Проверка заявки</option><option value="success">Заявка отправлена</option><option value="bookings">Мои заявки</option><option value="details">Карточка встречи</option><option value="access">Запрос доступа</option><option value="admin">Админ: заявки на решение</option><option value="admin-detail">Админ: решение и ссылка</option><option value="settings">Админ: настройки</option><option value="schedule">Админ: опубликованное время</option><option value="google">Админ: Google Календарь</option><option value="profile">Мои данные</option>
+        <option value="expired">Время удержания истекло</option><option value="attention">Заявка требует проверки</option><option value="policy-booking">Согласие для записи</option><option value="policy-access">Согласие для доступа</option>
+      </select>
+    </label>
+    <span class="text-small text-muted">Макет · вымышленные данные · без отправки заявок</span>
+  </div>
+  <div class="viz-carousel viz-dotted-background" aria-label="Варианты мобильного интерфейса" data-previous-label="Предыдущий" data-next-label="Следующий">
+    <section data-variant="Сияние" aria-label="Сияние"><div class="ma-stage"><div class="ma-phone" data-layout="glow" data-theme="dark" aria-label="Макет Сияние"></div></div></section>
+    <section data-variant="Компактный" aria-label="Компактный" hidden><div class="ma-stage"><div class="ma-phone compact" data-layout="compact" data-theme="dark" aria-label="Компактный макет"></div></div></section>
+  </div>
+  <script>
+    (() => {
+      const root = document.getElementById('meet-ma0v');
+      const phones = [...root.querySelectorAll('.ma-phone')];
+      const picker = root.querySelector('[data-preview-screen]');
+      const state = { screen:'home', theme:'dark', width:'390', duration:null, platform:null, day:'Чт, 15 октября', time:null, template:'Знакомство и обсуждение задачи', name:'Анна', email:'anna@example.com', phone:'', purpose:'Обсудить план совместной работы', consent:false, tab:'pending', submitted:false, cancelled:false, approved:false, link:'', linked:false, google:'ok' };
+      const design = { radius:20, glow:true };
+      const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+      const button = (text, action, kind='', disabled=false) => `<button type="button" class="ma-button cursor-interaction ${kind}" data-action="${action}" ${disabled?'disabled':''}>${text}</button>`;
+      const go = (text, target, kind='') => button(text, 'go:'+target, kind);
+      const badge = (text, kind='') => `<span class="ma-badge ${kind}">${text}</span>`;
+      const back = target => `<button type="button" class="ma-back cursor-interaction" data-action="go:${target}">‹ Назад</button>`;
+      const progress = n => `<div class="ma-progress" aria-label="Шаг ${n} из 5">${Array.from({length:5},(_,i)=>`<span class="${i<n?'on':''}"></span>`).join('')}</div>`;
+      const head = (n,title,sub,target) => `${back(target)}${progress(n)}<p class="ma-caption">Шаг ${n} из 5</p><h1>${title}</h1><p class="ma-muted">${sub}</p>`;
+      const choice = (text,action,selected=false,disabled=false) => `<button type="button" class="ma-choice cursor-interaction" data-action="${action}" aria-pressed="${selected}" ${disabled?'disabled':''}>${text}</button>`;
+      const field = (label,key,value,type='text') => `<label class="ma-field">${label}<input type="${type}" data-field="${key}" value="${esc(value)}" autocomplete="off"></label>`;
+      const details = rows => `<dl class="ma-details">${rows.map(([k,v])=>`<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>`;
+      const valid = () => !!state.name.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(state.email.trim()) && !!state.purpose.trim() && state.consent;
+      function card(id,title,status,date,action,kind='') {
+        return `<div class="ma-panel ma-stack"><div class="ma-row ma-between"><span class="ma-caption">Заявка №${id}</span>${badge(status,kind)}</div><h2>${title}</h2><p>${date}</p><p class="ma-caption">Москва · ${state.duration||30} минут · ${state.platform||'Яндекс Телемост'}</p>${go('Открыть заявку',action)}</div>`;
+      }
+      function screen() {
+        switch(state.screen) {
+          case 'home': return `<div class="ma-hero"><div class="ma-orbit" aria-hidden="true"></div><span class="ma-label">Онлайн-встречи</span><h1>Выберите время<br>для разговора</h1><p class="ma-muted">Запись на встречу — без долгой переписки.</p></div><div class="ma-stack">${go('Записаться на встречу →','template','primary')}${go('Мои заявки','bookings')}${go('Мои данные','profile','ghost')}</div><p class="ma-note">Вы выбираете время, администратор подтверждает встречу.</p><div class="ma-actions">${go('Управление встречами','admin','ghost')}</div>`;
+          case 'template': return `${head(1,'О чём встреча?','Выберите подходящий формат.','home')}<div class="ma-stack">${choice('<strong>Знакомство и обсуждение задачи</strong><br><span class="ma-muted">Первая встреча и следующие шаги</span>','template:Знакомство и обсуждение задачи',state.template==='Знакомство и обсуждение задачи')}${choice('<strong>Рабочая консультация</strong><br><span class="ma-muted">Разбор конкретного вопроса</span>','template:Рабочая консультация',state.template==='Рабочая консультация')}</div><div class="ma-actions">${go('Далее','format','primary')}</div>`;
+          case 'format': return `${head(2,'Длительность и связь','Сколько времени вам понадобится?','template')}<div class="ma-grid">${[15,30,45,60,90].map(n=>choice(n+' мин','duration:'+n,state.duration===n)).join('')}</div><h2>Где встретимся?</h2><div class="ma-grid two">${choice('Яндекс<br>Телемост','platform:Яндекс Телемост',state.platform==='Яндекс Телемост')}${choice('Zoom','platform:Zoom',state.platform==='Zoom',state.duration>30)}</div><p class="ma-caption">Для Zoom доступны встречи на 15 и 30 минут.</p><div class="ma-actions">${button('Далее','go:time','primary',!state.duration||!state.platform)}</div>`;
+          case 'time': return `${head(3,'Удобное время','15–16 октября · время по Москве','format')}<div class="ma-grid two">${choice('Чт, 15 октября','day:Чт, 15 октября',state.day==='Чт, 15 октября')}${choice('Пт, 16 октября','day:Пт, 16 октября',state.day==='Пт, 16 октября')}</div><div class="ma-row ma-between"><h2>Начало встречи</h2><span class="ma-caption">МСК · UTC+3</span></div><div class="ma-grid">${['10:00','11:00','13:00','14:00','15:00','16:00'].map(t=>choice(t,'time:'+t,state.time===t)).join('')}</div><p class="ma-caption">Показаны только доступные варианты.</p><div class="ma-actions">${button('Выбрать время','go:contacts','primary',!state.time)}</div>`;
+          case 'contacts': return `${head(4,'Контакты и цель','Используйте сохранённые данные или измените их.','time')}<div class="ma-row ma-between">${badge('Время удерживается · 09:42')}<span class="ma-caption">${state.time||'14:00'} МСК</span></div><div class="ma-panel ma-stack">${field('Как к вам обращаться','name',state.name)}${field('Email для приглашения','email',state.email,'email')}${field('Телефон · необязательно','phone',state.phone,'tel')}<p class="ma-caption">Telegram: @anna_demo · получен из профиля</p><label class="ma-field">Цель встречи<textarea data-field="purpose">${esc(state.purpose)}</textarea></label></div><label class="ma-check"><input type="checkbox" data-field="consent" ${state.consent?'checked':''}><span>Даю согласие на обработку данных для записи на встречу.</span></label>${button('Политика и текст согласия','policy','ghost')}<p class="ma-error" role="alert" data-validation ${state.email.trim()&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(state.email.trim())?'':'hidden'}>Проверьте email, например name@example.com.</p><div class="ma-actions">${button('Проверить заявку','go:review','primary',!valid())}${button('Сбросить выбор','reset','ghost')}</div>`;
+          case 'review': return `${head(5,'Всё верно?','Проверьте заявку перед отправкой.','contacts')}<div class="ma-panel">${details([['Встреча',esc(state.template)],['Дата и время',esc(state.day)+' · '+esc(state.time||'14:00')+' МСК'],['Формат',(state.duration||30)+' минут · '+esc(state.platform||'Яндекс Телемост')],['Контакты',esc(state.name)+'<br>'+esc(state.email.trim())],['Цель',esc(state.purpose)]])}</div><p class="ma-note">Ответ — до 14 октября, 18:00 МСК.<br>Подтверждённую встречу можно отменить не позднее чем за час до начала.</p><div class="ma-actions">${button('Отправить заявку','submit','primary')}${button('Изменить данные','go:contacts','ghost')}</div>`;
+          case 'success': return `<span class="ma-success" aria-hidden="true">✓</span><h1>Заявка отправлена</h1><p class="ma-muted">№1043 · ${esc(state.day)}, ${esc(state.time||'14:00')} МСК</p><div class="ma-panel ma-stack">${badge('Ожидает решения','warn')}<p>Время зарезервировано. Подтверждение придёт в чат после решения администратора.</p><p class="ma-caption">Ответ — до 14 октября, 18:00 МСК</p></div><div class="ma-actions">${go('Мои заявки','bookings','primary')}${go('На главную','home','ghost')}</div>`;
+          case 'bookings': return `${back('home')}<h1>Мои заявки</h1><div class="ma-tabs">${[['pending','На рассмотрении'],['future','Предстоящие'],['history','История']].map(([key,label])=>`<button type="button" class="cursor-interaction" data-action="tab:${key}" aria-pressed="${state.tab===key}">${label}</button>`).join('')}</div>${state.tab==='pending'?go('Требует проверки · 1','attention'):''}${state.tab==='pending'?card('1043',state.template,state.linked?'Подтверждена':state.approved?'Ожидает ссылку':'Ожидает решения','15 октября · 14:00','details',state.linked?'ok':'warn'):state.tab==='future'?card('1042','Рабочая консультация','Подтверждена','13 октября · 16:00','details','ok'):card('1026','Знакомство','Завершена','6 октября · 11:00','details')}<div class="ma-actions">${go('Новая заявка','template','primary')}</div>`;
+          case 'details': {
+            const future=state.tab==='future',history=state.tab==='history';
+            const confirmed=future||state.linked;
+            const status=state.cancelled?'Отменена':history?'Завершена':confirmed?'Подтверждена':state.approved?'Ожидает ссылку':'Ожидает решения';
+            const when=history?'6 октября · 11:00–11:30 МСК':future?'13 октября · 16:00–16:30 МСК':'15 октября · 14:00–14:30 МСК';
+            return `${back('bookings')}<div class="ma-row ma-between"><span class="ma-caption">Заявка №${history?'1026':future?'1042':'1043'}</span>${badge(status,confirmed&&!state.cancelled?'ok':'warn')}</div><h1>${history?'Знакомство':future?'Рабочая консультация':esc(state.template)}</h1><div class="ma-panel">${details([['Когда',when],['Где','Яндекс Телемост'],['Email','anna@example.com'],['Цель',esc(state.purpose)]])}</div><p class="ma-note">${history?'Встреча завершена.':confirmed?'Отмена доступна не позднее чем за час до начала.':'Ответ — до 14 октября, 18:00 МСК.'}</p><div class="ma-actions">${state.cancelled||history?go('Записаться снова','template','primary'):confirmed?button('Подключиться к встрече','connect','primary'):''}${history||state.cancelled?'':button(confirmed?'Отменить встречу':'Отозвать заявку','cancel','danger')}</div>`;
+          }
+          case 'access': return `<span class="ma-label">Доступ к записи</span><h1>Давайте познакомимся</h1><p class="ma-muted">Чтобы увидеть время для встречи, запросите доступ у администратора.</p><div class="ma-panel ma-stack"><h2>Ваши данные под защитой</h2><p class="ma-muted">Для запроса нужны Telegram ID и username. Контакты встречи вы добавите позже.</p>${button('Политика обработки данных','policy','ghost')}</div><label class="ma-check"><input type="checkbox" data-field="consent" ${state.consent?'checked':''}><span>Даю согласие на обработку данных для запроса доступа.</span></label><div class="ma-actions">${button('Запросить доступ','access','primary',!state.consent)}</div>`;
+          case 'admin': return `${back('home')}<span class="ma-label">Управление встречами</span><h1>Заявки на решение</h1><p class="ma-muted">Сначала те, у которых ближе срок ответа.</p>${card('1043',state.template,state.approved?'Ожидает ссылку':'Ожидает решения','15 октября · 14:00','admin-detail','warn')}<p class="ma-caption">Анна · @anna_demo<br>Ответить до 14 октября, 18:00 МСК</p><div class="ma-actions">${go('Запросы доступа · 1','access-admin')}${go('Настройки','settings','ghost')}</div>`;
+          case 'admin-detail': return `${back('admin')}<span class="ma-caption">Заявка №1043 · Анна</span><h1>${state.linked?'Встреча подтверждена':state.approved?'Добавьте ссылку':'Решение по заявке'}</h1><div class="ma-panel">${details([['Когда','15 октября · 14:00–14:30 МСК'],['Платформа','Яндекс Телемост'],['Контакты','anna@example.com · @anna_demo'],['Цель',esc(state.purpose)]])}</div>${state.approved&&!state.linked?`<p class="ma-note">Создайте встречу в Телемосте и вставьте её HTTPS-ссылку. Подтверждение — после проверки Google.</p>${field('Ссылка Яндекс Телемоста','link',state.link,'url')}`:''}<div class="ma-actions">${state.linked?badge('Событие Google проверено','ok'):state.approved?button('Проверить и подтвердить','link','primary',!state.link.trim()):button('Согласовать заявку','approve','primary')}${state.approved?'':button('Отклонить заявку','reject','danger')}</div>`;
+          case 'settings': return `${back('admin')}<h1>Настройки</h1><div class="ma-panel">${[['Доступ пользователей','access-admin'],['Опубликованное время','schedule'],['Часы рассмотрения','hours'],['Шаблоны встреч','templates'],['Google Календарь','google'],['Предупреждения','alerts'],['Сводка за 7 и 30 дней','stats']].map(([label,target])=>`<button type="button" class="ma-menu cursor-interaction" data-action="go:${target}"><span>${label}</span><span aria-hidden="true">›</span></button>`).join('')}</div>`;
+          case 'schedule': return `${back('settings')}<h1>Опубликованное время</h1><p class="ma-muted">Ближайшие 7 суток · Москва</p><div class="ma-panel ma-stack"><h2>Четверг, 15 октября</h2><p>10:00–17:00</p>${badge('Опубликовано','ok')}${button('Закрыть интервал','close-interval','danger')}</div><div class="ma-panel ma-stack"><h2>Пятница, 16 октября</h2><p>11:00–16:00</p>${badge('Опубликовано','ok')}</div><div class="ma-actions">${button('Добавить интервал','add-interval','primary')}${button('Закрыть часть времени','block-time')}</div>`;
+          case 'google': return `${back('settings')}<h1>Google Календарь</h1><div class="ma-panel ma-stack">${badge(state.google==='ok'?'Работает':'Нужно подключить заново',state.google==='ok'?'ok':'issue')}<p>${state.google==='ok'?'Доступ к календарю проверен.':'Не удалось подтвердить доступ к календарю.'}</p><p class="ma-caption">Последняя проверка: 10 октября, 12:40 МСК</p></div><p class="ma-note">Обновление доступа выполняется автоматически. Если потребуется ваше участие, уведомление придёт в Telegram.</p><div class="ma-actions">${button('Проверить подключение','check-google','primary')}${button('Показать состояние с ошибкой','google-error','ghost')}</div>`;
+          case 'profile': return `${back('home')}<h1>Мои данные</h1><div class="ma-panel ma-stack">${field('Имя','name',state.name)}${field('Email','email',state.email,'email')}${field('Телефон · необязательно','phone',state.phone,'tel')}<p class="ma-caption">@anna_demo · профиль Telegram</p></div><div class="ma-actions">${button('Сохранить изменения','save-profile','primary')}${button('Удалить сохранённые контакты','delete-profile','danger')}${button('Отозвать согласие','withdraw','ghost')}</div>`;
+          case 'access-admin': return `${back('settings')}<h1>Доступ пользователей</h1><div class="ma-panel ma-stack">${badge('Новый запрос','warn')}<h2>Анна · @anna_demo</h2><p class="ma-caption">Запрос от 10 октября, 12:00 МСК</p>${button('Разрешить запись','permit','primary')}${button('Отклонить','reject','ghost')}</div>${button('Заблокированные пользователи','blocked')}`;
+          case 'hours': return `${back('settings')}<h1>Часы рассмотрения</h1><p class="ma-muted">В эти часы считаются 3 рабочих часа на решение.</p><div class="ma-panel">${details([['Понедельник — пятница','10:00–19:00 МСК'],['Суббота и воскресенье','Не рассматриваем заявки']])}</div><p class="ma-note">Эти часы не публикуют время для встреч. Доступность задаётся отдельно.</p>${button('Изменить часы','edit-hours','primary')}`;
+          case 'templates': return `${back('settings')}<h1>Шаблоны встреч</h1><div class="ma-panel ma-stack"><h2>Знакомство и обсуждение задачи</h2><p class="ma-muted">Первая встреча и следующие шаги</p>${badge('Активен','ok')}${button('Редактировать','edit-template')}</div>${button('Создать шаблон','new-template','primary')}`;
+          case 'alerts': return `${back('settings')}<h1>Предупреждения</h1><div class="ma-panel ma-stack">${badge('Требует проверки','issue')}<h2>Не завершена отмена №1038</h2><p class="ma-muted">Google временно недоступен. Время сохраняется занятым до проверки.</p>${go('Открыть заявку','admin-detail')}</div><div class="ma-panel ma-stack"><h2>Не доставлено уведомление</h2><p class="ma-muted">Повтор отправки выполняется автоматически.</p></div>`;
+          case 'stats': return `${back('settings')}<h1>Сводка</h1>${badge('Последние 7 дней')}<div class="ma-panel">${details([['Заявки','8'],['Подтверждены','5'],['Отклонены / истекли','1 / 1'],['Отменены','1'],['Среднее время решения','42 минуты']])}</div><p class="ma-caption">Пример агрегатов без контактов.</p>`;
+          case 'expired': return `${back('home')}${badge('Время больше не удерживается','warn')}<h1>Выберите время заново</h1><p class="ma-muted">10 минут на оформление истекли. Выбранное время может быть занято другим посетителем.</p><div class="ma-panel"><p>Контакты и цель сохранены в текущем просмотре. Доступность времени проверим повторно.</p></div><div class="ma-actions">${button('Выбрать другое время','expired-time','primary')}${go('На главную','home','ghost')}</div>`;
+          case 'attention': return `${back('bookings')}${badge('Требует проверки','issue')}<h1>Отмена ещё не завершена</h1><div class="ma-panel ma-stack"><span class="ma-caption">Заявка №1038 · актуальная</span><p>13 октября · 11:00 МСК</p><p class="ma-muted">Не удалось подтвердить отмену в календаре. Время остаётся занятым до проверки администратором.</p></div><p class="ma-note">Подтверждение отмены придёт в Telegram. Эта заявка остаётся среди актуальных.</p><div class="ma-actions">${go('Мои заявки','bookings','primary')}</div>`;
+          case 'policy-booking': return `${back('contacts')}<h1>Согласие для записи</h1><div class="ma-panel ma-stack"><p>Отдельное согласие на обработку персональных данных для записи на встречу.</p><p>Данные: Telegram ID и username, имя, email, необязательный телефон, цель, время и статус встречи.</p><p>Действия: получение, хранение, использование, передача email в Google Календарь для приглашения, удаление по сроку.</p><p>Сведения в собственной базе бота хранятся по срокам политики. Оператор и порядок отзыва указаны в политике.</p></div><p class="ma-caption">Текст из действующего бота. Ссылка политики будет доступна в рабочем приложении.</p><div class="ma-actions">${go('Вернуться к согласию','contacts','primary')}</div>`;
+          case 'policy-access': return `${back('access')}<h1>Согласие для доступа</h1><div class="ma-panel ma-stack"><p>Для запроса доступа бот сохранит ваш Telegram ID и username, а затем данные заявки, если вы решите записаться.</p><p>Согласие на обработку данных даётся отдельным действием.</p></div><p class="ma-caption">Текст из действующего бота. Ссылка политики будет доступна в рабочем приложении.</p><div class="ma-actions">${go('Вернуться к согласию','access','primary')}</div>`;
+          case 'confirm-cancel': return `${back('details')}<h1>Отменить заявку?</h1><p class="ma-muted">Действие освободит время после завершения отмены. Статус можно проверить в «Моих заявках».</p><div class="ma-actions">${go('Да, отменить','cancelled','danger')}${go('Оставить заявку','details','primary')}</div>`;
+          case 'confirm-reset': return `${back('contacts')}<h1>Сбросить выбор времени?</h1><p class="ma-muted">Удержание будет освобождено. Контакты останутся в текущем просмотре.</p><div class="ma-actions">${go('Сбросить и выбрать заново','reset-done','danger')}${go('Продолжить оформление','contacts','primary')}</div>`;
+          case 'notice': return `${back('home')}<h1>${esc(state.noticeTitle||'Действие показано')}</h1><div class="ma-panel"><p>${esc(state.notice||'В макете изменено только отображение. Реальных операций нет.')}</p></div><div class="ma-actions">${go('Продолжить просмотр',state.noticeBack||'home','primary')}</div>`;
+          default:return '';
+        }
+      }
+      function render() {
+        picker.value=[...picker.options].some(o=>o.value===state.screen)?state.screen:'';
+        phones.forEach(p=>{
+          p.dataset.theme=state.theme;
+          p.style.setProperty('--ma-width',state.width+'px');
+          p.style.setProperty('--ma-radius',design.radius+'px');
+          p.innerHTML=`<div class="ma-tg"><button type="button" class="ma-close cursor-interaction" data-action="go:home" aria-label="На главную">‹</button><div><b>Планирование встреч</b><small>Мини-приложение · макет</small></div><span class="ma-dots" aria-hidden="true">•••</span></div><main class="ma-body" aria-live="polite">${screen()}</main>`;
+          const orbit=p.querySelector('.ma-orbit');if(orbit)orbit.hidden=!design.glow;
+        });
+      }
+      function notice(title,text,backTo) {state.noticeTitle=title;state.notice=text;state.noticeBack=backTo;state.screen='notice';}
+      root.addEventListener('click',e=>{
+        const target=e.target.closest('[data-action]');if(!target||target.disabled)return;
+        const action=target.dataset.action;
+        if(action.startsWith('go:'))state.screen=action.slice(3);
+        else if(action.startsWith('template:'))state.template=action.slice(9);
+        else if(action.startsWith('duration:')){state.duration=Number(action.slice(9));if(state.duration>30&&state.platform==='Zoom')state.platform=null;}
+        else if(action.startsWith('platform:'))state.platform=action.slice(9);
+        else if(action.startsWith('day:')){state.day=action.slice(4);state.time=null;}
+        else if(action.startsWith('time:'))state.time=action.slice(5);
+        else if(action.startsWith('tab:'))state.tab=action.slice(4);
+        else if(action==='submit'){state.submitted=true;state.screen='success';}
+        else if(action==='approve')state.approved=true;
+        else if(action==='link'){if(!/^https:\/\/telemost\.yandex\.ru\/[^\s]+$/.test(state.link.trim())){notice('Проверьте ссылку','Для этого примера нужна HTTPS-ссылка telemost.yandex.ru с путём встречи.','admin-detail');}else{state.linked=true;notice('Встреча подтверждена','Демонстрация успешного ответа Google. Реальное событие не создавалось.','admin');}}
+        else if(action==='cancel')state.screen='confirm-cancel';
+        else if(action==='reset')state.screen='confirm-reset';
+        else if(action==='expired-time'){state.time=null;state.screen='time';}
+        else if(action==='check-google'){state.google='ok';}
+        else if(action==='google-error')state.google='error';
+        else if(action==='policy')state.screen=state.screen==='access'?'policy-access':'policy-booking';
+        else if(action==='access')notice('Запрос доступа отправлен','Ожидайте решения администратора. В демонстрации запрос никуда не отправляется.','home');
+        else if(action==='connect')notice('Подключение к встрече','В рабочем приложении откроется ссылка выбранного видеосервиса. В макете внешней ссылки нет.','details');
+        else notice('Предпросмотр действия','Положение и название действия показаны. Рабочая форма будет реализована на программном этапе; данные не сохраняются на сервере.',state.screen);
+        if(state.screen==='cancelled'){state.cancelled=true;state.screen='details';}
+        if(state.screen==='reset-done'){state.time=null;state.screen='time';}
+        render();
+      });
+      function inputChanged(e){
+        const key=e.target.dataset.field;if(!key)return;
+        state[key]=e.target.type==='checkbox'?e.target.checked:e.target.value;
+        phones.forEach(p=>{p.querySelectorAll('[data-field]').forEach(el=>{if(el===e.target||el.dataset.field!==key)return;if(el.type==='checkbox')el.checked=state[key];else el.value=state[key];});const next=p.querySelector('[data-action="go:review"]');if(next)next.disabled=!valid();const access=p.querySelector('[data-action="access"]');if(access)access.disabled=!state.consent;const link=p.querySelector('[data-action="link"]');if(link)link.disabled=!state.link.trim();const error=p.querySelector('[data-validation]');if(error)error.hidden=!state.email.trim()||/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(state.email.trim());});
+      }
+      root.addEventListener('input',inputChanged);
+      root.addEventListener('change',inputChanged);
+      picker.addEventListener('change',()=>{state.screen=picker.value;render();});
+      const restore=s=>{const v=s?.modelContent;if(!v)return;if(['dark','light'].includes(v.theme))state.theme=v.theme;if(['320','360','390','430'].includes(v.width))state.width=v.width;if([...picker.options].some(o=>o.value===v.screen))state.screen=v.screen;};
+      const remember=()=>{window.openai?.setWidgetState?.({modelContent:{screen:state.screen,theme:state.theme,width:state.width},privateContent:null})?.catch(()=>{});};
+      restore(window.openai?.widgetState);
+      window.addEventListener('openai:set_globals',e=>{const before=[state.screen,state.theme,state.width].join('|');restore(e.detail?.globals?.widgetState);if(before!==[state.screen,state.theme,state.width].join('|'))render();});
+      root.addEventListener('click',e=>{if(e.target.closest('[data-action]'))remember();});
+      picker.addEventListener('change',remember);
+      root.addEventListener('ma-preview-settings',e=>{restore({modelContent:e.detail});render();});
+      render();
+      if(globalThis.Tweak){
+        const tweak=new Tweak({container:root,onChange:render});
+        tweak.addSelect(state,'theme',{label:'Тема',options:[{label:'Тёмная',value:'dark'},{label:'Светлая',value:'light'}]});
+        tweak.addSelect(state,'width',{label:'Ширина экрана',options:['320','360','390','430']});
+        tweak.addSlider(design,'radius',{label:'Скругление карточек',min:12,max:24,unit:'px'});
+        tweak.addToggle(design,'glow',{label:'Световой акцент на главной'});
+      }
+    })();
+  </script>
+</div>
