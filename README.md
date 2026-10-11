@@ -83,3 +83,10 @@
 Рабочий launcher API, третий Compose-контейнер и proxy поддомена подготовлены в dev. Не запускать поверх рабочей базы до согласованной остановки и миграции v8→v11. Порядок выпуска, резервного копирования, проверки и восстановления: [mini_app_release_runbook.md](docs/mini_app_release_runbook.md). Серверный .env не заменять локальной копией.
 
 11.10.2026 закрытый рабочий выпуск b15d275 выполнен после явного согласования: /app/, три контейнера, schema v11, две личные кнопки; общий доступ пока не открыт. Актуальное состояние и оставшиеся проверки: [mini_app_release_status.md](docs/mini_app_release_status.md).
+
+
+## Mini App: учебный выпуск 11.10.2026
+
+Постоянный адрес: https://meetcalendar.fin-partner.pro/app/. Для участников: https://t.me/MyMeetPlanning_bot → /start → «Планировщик встреч» в меню. Общий вход открыт, допуск к записи ручной. Программа main/VPS 26570c2; документация после выпуска в dev.
+
+Инструкция: [владельцу](docs/mini_app_owner_guide.md); [статус/backup](docs/mini_app_release_status.md); [план](docs/telegram_mini_app_plan.md); [матрица приёмки и ограничения](docs/mini_app_acceptance_stage.md). Расширенная аппаратная/аварийная приёмка остаётся частичной.
