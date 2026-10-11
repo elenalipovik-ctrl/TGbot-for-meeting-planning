@@ -17,8 +17,17 @@ class ApiConfig:
     allowed_origins: tuple[str, ...]
     security: SecurityPolicy = DEFAULT_POLICY
     enabled: bool = True
+    allowed_user_ids: frozenset[int] | None = None
+    test_environment: bool = False
 
     def __post_init__(self):
+        if type(self.test_environment) is not bool:
+            raise ValueError("test_environment must be boolean")
+        if self.allowed_user_ids is not None and (
+            type(self.allowed_user_ids) is not frozenset or not self.allowed_user_ids
+            or any(type(user) is not int or not 0 < user < 2**63 for user in self.allowed_user_ids)
+        ):
+            raise ValueError("Expected a nonempty immutable Telegram user allowlist")
         if type(self.enabled) is not bool:
             raise ValueError("MINI_APP_ENABLED must be boolean")
         if not self.bot_token or not self.policy_version:

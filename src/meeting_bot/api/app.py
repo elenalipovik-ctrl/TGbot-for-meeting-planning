@@ -136,8 +136,13 @@ def create_app(service, calendar, config, *, clock=time.time):
         return await api_error(request, ApiError(503,"CALENDAR_UNAVAILABLE",
             "Не удалось проверить Google Календарь. Перечитайте состояние заявки и повторите позже.", retryable=True,retry_after=5))
 
+    def require_user(user_id):
+        if config.allowed_user_ids is not None and user_id not in config.allowed_user_ids:
+            raise ApiError(403,"TEST_ACCESS_DENIED","Закрытая проверка доступна только владельцу приложения.")
+
     def check(principal, *, admin=False, bootstrap=False, connection=None):
         require_enabled()
+        require_user(principal.actor_id)
         c = connection or service._connect()
         try:
             row = c.execute("SELECT expires_at,revoked_at FROM api_sessions WHERE token_hash=?", (principal.token_hash,)).fetchone()
@@ -214,7 +219,7 @@ def create_app(service, calendar, config, *, clock=time.time):
         return dict(telegram_id=str(principal.actor_id),role="admin" if administrative else "visitor", access_status=status,
             username=principal.username, policy_version=config.policy_version,policy_url=config.policy_url,
             time_zone=service.review_schedule().time_zone, durations={name:list(allowed_durations(name)) for name in ("telemost","zoom")},
-            capabilities=dict(admin=administrative,booking=status=="allowed"),
+            capabilities=dict(admin=administrative,booking=status=="allowed",test_environment=config.test_environment),
             allowed_actions=(["request_access"] if status in ("new","rejected") else []))
 
     def resolve(principal, ref, *, admin=False):
@@ -286,6 +291,7 @@ def create_app(service, calendar, config, *, clock=time.time):
         store.rate("auth:"+peer,config.security.auth_per_minute,now())
         identity = verify_init_data(body.init_data,config.bot_token,now=now(),max_age=config.security.init_max_age,
                                     future_skew=config.security.future_skew)
+        require_user(identity.telegram_id)
         return response(request,store.exchange(identity,now()))
 
     @app.delete(prefix+"/session",response_model=Envelope[LogoutData],dependencies=private)
