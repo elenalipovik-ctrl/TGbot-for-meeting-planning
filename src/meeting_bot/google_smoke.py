@@ -39,7 +39,7 @@ def main() -> None:
         STATE_FILE.unlink()
         print("Test event deletion confirmed by Google.")
         return
-    if not args.start or args.minutes not in (15, 30, 45, 60, 90):
+    if not args.start or args.minutes not in (30, 45, 60, 90):
         parser.error("A start with UTC offset and an allowed duration are required")
     starts_at = _start(args.start)
     ends_at = starts_at + args.minutes * 60

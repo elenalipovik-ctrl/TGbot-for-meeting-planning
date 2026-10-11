@@ -72,7 +72,7 @@ def test_preview_persona_access_and_group_filter(preview,persona,expected):
         assert preview.get(P+'/me/profile',headers=auth).status_code==403
 
 
-@pytest.mark.parametrize('duration',[15,30,45,60,90])
+@pytest.mark.parametrize('duration',[30,45,60,90])
 def test_preview_slots_follow_owner_schedule(preview,duration):
     from datetime import datetime
     from zoneinfo import ZoneInfo
@@ -92,3 +92,18 @@ def test_preview_slots_follow_owner_schedule(preview,duration):
         assert (start.hour,start.minute) in PREVIEW_STARTS
         assert end.date()==start.date() and (end.hour,end.minute)<=(18,0)
     assert all(sum(datetime.fromtimestamp(s['starts_at'],zone).date()==day for s in slots)<=5 for day in {datetime.fromtimestamp(s['starts_at'],zone).date() for s in slots})
+
+
+def test_fifteen_minutes_rejected_by_api_even_with_old_client(h):
+    h.login()
+    bootstrap = h.client.get(P+'/bootstrap', headers=h.headers[VISITOR]).json()['data']
+    assert bootstrap['durations'] == {'telemost': [30,45,60,90], 'zoom': [30]}
+    held, _ = h.ready_hold()
+    current = held['current']
+    template = current['draft']['template_id']
+    for video in ('telemost', 'zoom'):
+        assert h.client.get(P+'/slots', params=dict(template_id=template, duration_minutes=15, video_service=video), headers=h.headers[VISITOR]).status_code == 422
+        result = command(h, '/me/draft', dict(revision=current['revision'], template_id=template, duration_minutes=15, video_service=video))
+        assert result.status_code == 422
+        result = command(h, '/holds', dict(revision=current['revision'], template_id=template, interval_id=1, starts_at=held['booking']['starts_at'], duration_minutes=15, video_service=video), 'POST')
+        assert result.status_code == 422

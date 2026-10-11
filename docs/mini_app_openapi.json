@@ -2271,7 +2271,6 @@
         "properties": {
           "duration_minutes": {
             "enum": [
-              15,
               30,
               45,
               60,
@@ -2746,7 +2745,6 @@
             "anyOf": [
               {
                 "enum": [
-                  15,
                   30,
                   45,
                   60,

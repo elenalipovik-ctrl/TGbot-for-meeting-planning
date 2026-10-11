@@ -54,12 +54,12 @@ class HoldInput(VersionInput):
     template_id: ObjectId
     interval_id: ObjectId
     starts_at: Timestamp
-    duration_minutes: Literal[15, 30, 45, 60, 90]
+    duration_minutes: Literal[30, 45, 60, 90]
     video_service: Literal["telemost", "zoom"]
 
     @model_validator(mode="after")
     def allowed_duration(self):
-        if self.video_service == "zoom" and self.duration_minutes not in (15, 30):
+        if self.video_service == "zoom" and self.duration_minutes not in (30,):
             raise ValueError("duration")
         return self
 
@@ -207,7 +207,7 @@ class SuccessResponse(BaseModel):
 
 class SelectionInput(VersionInput):
     template_id: ObjectId | None = None
-    duration_minutes: Literal[15,30,45,60,90] | None = None
+    duration_minutes: Literal[30,45,60,90] | None = None
     video_service: Literal["telemost","zoom"] | None = None
     selected_day: date | None = None
 

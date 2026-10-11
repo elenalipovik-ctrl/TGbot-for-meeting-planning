@@ -317,3 +317,16 @@ def test_privacy_action_preserves_hold_and_returns_current_button_revision(setup
     assert service.booking_status(old.values[5]) == "held"
     stale = action(flow, 120, "guest", f"r:{old.revision}:phone:skip", now)
     assert "измен" in stale.text or "устар" in stale.text
+
+
+def test_chat_hides_and_rejects_old_fifteen_minute_button(setup_flow):
+    service, _, flow, now = setup_flow
+    allow(service, flow, 101, now)
+    templates = action(flow, 101, 'guest', 'book', now)
+    durations = action(flow, 101, 'guest', button(templates, 't:'), now)
+    options = {item.action for row in durations.rows for item in row}
+    assert 'd:15' not in options
+    assert {'d:30','d:45','d:60','d:90'} <= options
+    action(flow, 101, 'guest', 'd:15', now)
+    with connect(service.path) as connection:
+        assert connection.execute('SELECT duration_minutes FROM visitor_dialogs WHERE visitor_id=101').fetchone()[0] is None

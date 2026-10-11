@@ -46,4 +46,5 @@ jobs:
           docker build --tag meeting-bot:ci .
       - name: Smoke release image without external network or working data
         run: |
-          docker run --rm --network=none --read-only --tmpfs /tmp:rw,uid=10001,gid=10001,mode=700 --mount type=bind,source="$PWD/scripts/check_release_image.py",target=/image-check.py,readonly meeting-bot:ci python /image-check.py
+          TEMP_MOUNT=$(docker compose config --format json | python -c 'import json,sys; print(json.load(sys.stdin)["services"]["api"]["tmpfs"][0])')
+          docker run --rm --network=none --read-only --tmpfs "$TEMP_MOUNT" --mount type=bind,source="$PWD/scripts/check_release_image.py",target=/image-check.py,readonly meeting-bot:ci python /image-check.py

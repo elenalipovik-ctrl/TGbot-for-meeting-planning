@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 
 UTC = timezone.utc
-DURATIONS = (15, 30, 45, 60, 90)
+DURATIONS = (30, 45, 60, 90)
 VIDEO_SERVICES = ("telemost", "zoom")
 SLOT_STEP_SECONDS = 15 * 60
 MIN_LEAD_SECONDS = 2 * 60 * 60
@@ -65,7 +65,7 @@ def allowed_durations(video_service: str) -> tuple[int, ...]:
     if video_service == "telemost":
         return DURATIONS
     if video_service == "zoom":
-        return (15, 30)
+        return (30,)
     raise ValueError("Unknown video service")
 
 

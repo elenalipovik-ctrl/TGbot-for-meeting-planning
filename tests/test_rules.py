@@ -40,7 +40,7 @@ def test_slots_duration_cutoff_closed_days_google_gap_and_horizon(
     assert at(5, 14, 45) not in available_slots(now, [monday], 30, "telemost", schedule)
     assert at(5, 17, 45) not in available_slots(now, [monday], 30, "telemost", schedule)
     assert available_slots(now, [monday], 45, "zoom", schedule) == []
-    assert at(5, 15) in available_slots(now, [monday], 15, "zoom", schedule)
+    assert at(5, 15) in available_slots(now, [monday], 30, "zoom", schedule)
 
     busy = BusyInterval(at(5, 16), at(5, 16, 30))
     slots = available_slots(now, [monday], 30, "telemost", schedule, [busy])
@@ -70,3 +70,12 @@ def test_two_hour_lead_cancel_boundary_and_calendar_months() -> None:
     jan_31 = int(datetime(2026, 1, 31, 10, tzinfo=ZONE).timestamp())
     march_31 = int(datetime(2026, 3, 31, 10, tzinfo=ZONE).timestamp())
     assert add_calendar_months(jan_31, 2, "Europe/Moscow") == march_31
+
+
+def test_fifteen_minute_meetings_are_unavailable(schedule):
+    from meeting_bot.rules import allowed_durations
+    assert allowed_durations('telemost') == (30, 45, 60, 90)
+    assert allowed_durations('zoom') == (30,)
+    interval = Availability(1, at(5, 15), at(5, 18), 'Europe/Moscow')
+    for video in ('telemost', 'zoom'):
+        assert available_slots(at(5, 10), [interval], 15, video, schedule) == []

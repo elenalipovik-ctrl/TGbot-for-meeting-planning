@@ -140,7 +140,7 @@ class VisitorFlow:
         self._save(visitor_id, "duration", now, template_id=template_id)
         return Reply("Выберите длительность:",
                      tuple(_row((f"{minutes} минут", f"d:{minutes}")) for minutes in
-                           (15, 30, 45, 60, 90)) + (_row(("Назад", "back")),))
+                           allowed_durations("telemost")) + (_row(("Назад", "back")),))
 
     def _videos(self, visitor_id: int, duration: int, now: int) -> Reply:
         self._save(visitor_id, "video", now, duration_minutes=duration)
