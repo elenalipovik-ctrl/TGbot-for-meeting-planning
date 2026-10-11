@@ -13,3 +13,8 @@ logs/
 *client_secret*.json
 *token*.json
 *.egg-info/
+
+# Mini App build / dependency artifacts
+mini_app/node_modules/
+mini_app/dist/
+*.tsbuildinfo

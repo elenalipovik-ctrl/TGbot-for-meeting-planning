@@ -25,8 +25,36 @@ jobs:
             exit 1
           fi
       - name: Install dependencies
-        run: python -m pip install -e '.[test]'
+        run: python -m pip install -e '.[test,api]'
       - name: Run tests
         run: python -m pytest -q
+      - name: Check Mini App API contract
+        run: python scripts/export_mini_app_contract.py --check
       - name: Compile source
         run: python -m compileall -q src scripts
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: mini_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.25.0'
+          package_json_file: mini_app/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: mini_app/pnpm-lock.yaml
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Check generated API types
+        run: node ../scripts/generate_mini_app_types.mjs --check
+      - name: Test visitor client
+        run: pnpm test
+      - name: Build visitor client
+        run: pnpm build

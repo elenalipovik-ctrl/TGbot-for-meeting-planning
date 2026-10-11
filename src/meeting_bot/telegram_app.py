@@ -21,11 +21,24 @@ from .telegram_transport import telegram_bot
 from .visitor_flow import Reply, VisitorFlow
 
 
+DRAFT_ACTIONS = {"t", "d", "v", "day", "time", "reuse", "edit", "back",
+                     "phone", "consent", "send", "stop", "draft", "profile"}
+
+
+def _callback_data(action: str, revision: int | None) -> str:
+    if revision is None or action.split(":", 1)[0] not in DRAFT_ACTIONS:
+        return action
+    value = f"r:{revision}:{action}"
+    if len(value.encode("utf-8")) > 64:
+        raise ValueError("Callback exceeds Telegram limit")
+    return value
+
+
 def _markup(reply: Reply) -> InlineKeyboardMarkup | None:
     if not reply.rows:
         return None
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=button.label, callback_data=button.action)
+        [InlineKeyboardButton(text=button.label, callback_data=_callback_data(button.action, reply.draft_revision))
          for button in row] for row in reply.rows
     ])
 
@@ -100,6 +113,9 @@ def build_router(flow: VisitorFlow, admin_flow: AdminFlow | None = None,
         elif action.startswith("adm:"):
             return
         else:
+            if action.split(":", 1)[0] in DRAFT_ACTIONS:
+                await send(query.message, Reply("Кнопка устарела. Откройте меню и продолжите запись заново."))
+                return
             reply = await asyncio.to_thread(flow.handle, query.from_user.id,
                                             _username(query), action, int(time.time()))
         await send(query.message, reply)

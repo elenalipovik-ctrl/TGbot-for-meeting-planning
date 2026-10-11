@@ -9,7 +9,7 @@ from pathlib import Path
 from .technical_log import log_event
 
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 11
 MIGRATIONS = {
     1: "migrations/001_initial.sql",
     2: "migrations/002_rules.sql",
@@ -19,6 +19,9 @@ MIGRATIONS = {
     6: "migrations/006_reuse_metric.sql",
     7: "migrations/007_manual_blocks.sql",
     8: "migrations/008_telegram_only.sql",
+    9: "migrations/009_shared_drafts.sql",
+    10: "migrations/010_api_state.sql",
+    11: "migrations/011_booking_start_options.sql",
 }
 ACTIVE_STATUSES = (
     "held", "pending", "awaiting_link", "creating_calendar", "confirmed", "attention"

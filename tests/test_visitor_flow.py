@@ -243,7 +243,7 @@ def test_expired_hold_and_safe_technical_log(setup_flow, tmp_path):
     assert service.booking_status(1) == "expired"
     log = (tmp_path / "technical.jsonl").read_text(encoding="utf-8")
     assert "visitor_input_rejected" in log and '"code":"email"' in log
-    assert "visitor_dialog_step" in log and "hold_abandoned" in log
+    assert "visitor_dialog_step" in log and "holds_expired" in log
     for secret in ("Private Name", "private@example.org", "Private purpose",
                    "private-invalid-email"):
         assert secret not in log
@@ -300,3 +300,20 @@ def test_live_bot_refuses_unverified_storage(monkeypatch):
     monkeypatch.setattr(telegram_app, "read_env", lambda _: settings)
     with pytest.raises(RuntimeError, match="verified database location"):
         asyncio.run(telegram_app.run())
+
+
+def test_privacy_action_preserves_hold_and_returns_current_button_revision(setup_flow):
+    from meeting_bot.drafts import DraftStore
+    service, _, flow, now = setup_flow
+    allow(service, flow, 120, now)
+    to_contact_form(flow, 120, now)
+    old = DraftStore(service).read(120, 120, now)
+    reply = action(flow, 120, "guest", "profile:delete:yes", now)
+    current = DraftStore(service).read(120, 120, now)
+    assert current.values[5] == old.values[5]
+    assert current.values[0] == "name"
+    assert current.values[6:9] == (None, None, None)
+    assert reply.draft_revision == current.revision > old.revision
+    assert service.booking_status(old.values[5]) == "held"
+    stale = action(flow, 120, "guest", f"r:{old.revision}:phone:skip", now)
+    assert "измен" in stale.text or "устар" in stale.text

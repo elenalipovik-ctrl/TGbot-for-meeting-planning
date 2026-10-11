@@ -17,18 +17,22 @@ def submit_with_google(service: BookingService, calendar: GoogleCalendar,
                        visitor_id: int, booking_id: int, *, name: str,
                        username: str | None, email: str, phone: str | None,
                        purpose: str, policy_version: str, now: int,
-                       used_saved_contacts: bool = False) -> int:
+                       used_saved_contacts: bool = False,
+                       expected_draft_revision: int | None = None,
+                       google_busy: list[BusyInterval] | None = None) -> int:
     starts_at, ends_at = service.booking_window(booking_id)
-    busy = calendar.freebusy(starts_at - GAP_SECONDS, ends_at + GAP_SECONDS)
+    busy = google_busy if google_busy is not None else calendar.freebusy(starts_at - GAP_SECONDS, ends_at + GAP_SECONDS)
     return service.submit_request(
         visitor_id, booking_id, name=name, username=username, email=email,
         phone=phone, purpose=purpose, policy_version=policy_version, now=now,
         google_busy=busy, used_saved_contacts=used_saved_contacts,
+        expected_draft_revision=expected_draft_revision,
     )
 
 
 def confirm_with_google(service: BookingService, calendar: GoogleCalendar,
-                        booking_id: int, video_url: str, now: int) -> str:
+                        booking_id: int, video_url: str, now: int, *,
+                        expected_revision: int | None = None) -> str:
     status = service.booking_status(booking_id)
     if status == "confirmed":
         current = service.calendar_booking(booking_id)
@@ -40,7 +44,8 @@ def confirm_with_google(service: BookingService, calendar: GoogleCalendar,
         if current.cancel_requested_at is not None or current.video_url != video_url:
             raise RuleError("Заявка не готова к повторной проверке Google Календаря.")
     else:
-        service.begin_calendar_creation(booking_id, video_url, now)
+        service.begin_calendar_creation(booking_id, video_url, now,
+                                        expected_revision=expected_revision)
     event_id = service.reserve_google_event_id(booking_id, now)
     booking = service.calendar_booking(booking_id)
     try:

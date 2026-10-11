@@ -1,44 +1,31 @@
 """Stage 2 booking operations. External availability is supplied as data."""
 
 import logging
-import re
 import sqlite3
+from contextlib import closing
 import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .database import connect, initialize_database
+from .unit_of_work import borrowed
+from .drafts import DraftStore, SESSION_SECONDS, check_draft_revision, require_allowed
+from .errors import ActiveDraftExists, AccessDenied, RuleError, SlotUnavailable, StateConflict, StorageUnavailable
 from .rules import (
     Availability, BusyInterval, ReviewSchedule, ReviewWindow, add_calendar_months,
     allowed_durations, available_slots, can_cancel_confirmed, decision_deadline,
 )
 from .technical_log import log_event
+from .validation import EMAIL_PATTERN, valid_email, valid_phone, valid_visitor_text
 
 
-EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 TERMINAL_STATUSES = (
     "rejected", "expired", "cancelled_by_visitor", "cancelled_by_admin"
 )
 PROCESSABLE_JOBS = ("hold_expire", "request_expire", "reminder_24h", "reminder_2h", "cleanup")
 FRIENDLY_STORAGE_ERROR = "Не удалось сохранить действие. Попробуйте ещё раз позднее."
-
-
-class RuleError(Exception):
-    """A user action does not satisfy a booking rule."""
-
-
-class AccessDenied(RuleError):
-    """The visitor or actor lacks the needed rights."""
-
-
-class SlotUnavailable(RuleError):
-    """The chosen slot is no longer available."""
-
-
-class StorageUnavailable(Exception):
-    """The database is temporarily unavailable; safe to show to the user."""
 
 
 @dataclass(frozen=True)
@@ -119,6 +106,9 @@ class BookingService:
 
     def _connect(self) -> sqlite3.Connection:
         try:
+            current = borrowed(self.path)
+            if current is not None:
+                return current
             return connect(self.path, busy_timeout_ms=self.busy_timeout_ms, logger=self.logger)
         except sqlite3.OperationalError as error:
             log_event(self.logger, "storage_unavailable", code=type(error).__name__)
@@ -133,6 +123,20 @@ class BookingService:
         if actor_id != visitor_id:
             log_event(self.logger, "access_denied", code="other_profile")
             raise AccessDenied("Доступны только собственные данные.")
+
+    def _check_revision(self, connection, table: str, object_id: int,
+                        expected: int | None) -> None:
+        keys = {"bookings": "id", "visitors": "telegram_id",
+                "meeting_templates": "id", "availability_intervals": "id", "manual_blocks": "id"}
+        if expected is None:
+            return
+        row = connection.execute(
+            f"SELECT revision FROM {table} WHERE {keys[table]}=?", (object_id,),
+        ).fetchone()
+        if row is None:
+            raise RuleError("Объект не найден.")
+        if type(expected) is not int or row[0] != expected:
+            raise StateConflict("Данные уже изменены. Обновите экран и повторите действие.")
 
     def _schedule(self, connection: sqlite3.Connection) -> ReviewSchedule:
         row = connection.execute(
@@ -151,13 +155,18 @@ class BookingService:
         finally:
             connection.close()
 
-    def set_review_schedule(self, actor_id: int, schedule: ReviewSchedule, now: int) -> None:
+    def set_review_schedule(self, actor_id: int, schedule: ReviewSchedule, now: int, *,
+                            expected_revision: int | None = None) -> None:
         self._require_admin(actor_id)
         if not schedule.windows:
             raise ValueError("Review hours cannot be empty")
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            if expected_revision is not None:
+                revision = connection.execute("SELECT revision FROM setting_revisions WHERE name='review_schedule'").fetchone()[0]
+                if type(expected_revision) is not int or expected_revision != revision:
+                    raise StateConflict("Часы рассмотрения уже изменены. Обновите экран.")
             connection.execute(
                 "UPDATE app_settings SET value = ?, updated_at = ? WHERE key = 'time_zone'",
                 (schedule.time_zone, now),
@@ -178,6 +187,10 @@ class BookingService:
                 connection.execute("ROLLBACK")
             log_event(self.logger, "storage_unavailable", code=type(error).__name__)
             raise StorageUnavailable(FRIENDLY_STORAGE_ERROR) from error
+        except BaseException:
+            if connection.in_transaction:
+                connection.execute("ROLLBACK")
+            raise
         finally:
             connection.close()
 
@@ -231,19 +244,23 @@ class BookingService:
         finally:
             connection.close()
 
-    def decide_access(self, actor_id: int, visitor_id: int, status: str, now: int) -> None:
+    def decide_access(self, actor_id: int, visitor_id: int, status: str, now: int, *,
+                      expected_revision: int | None = None) -> None:
         self._require_admin(actor_id)
         if status not in ("allowed", "rejected", "blocked"):
             raise ValueError("Invalid access decision")
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            self._check_revision(connection, "visitors", visitor_id, expected_revision)
             changed = connection.execute(
                 "UPDATE visitors SET access_status = ? WHERE telegram_id = ?",
                 (status, visitor_id),
             ).rowcount
             if not changed:
                 raise RuleError("Запрос доступа не найден.")
+            if status != "allowed":
+                DraftStore(self)._reset(connection, visitor_id, now)
             pending_ids = [item[0] for item in connection.execute(
                 "SELECT id FROM access_requests WHERE visitor_id = ? AND status = 'pending'",
                 (visitor_id,),
@@ -272,29 +289,53 @@ class BookingService:
         finally:
             connection.close()
 
-    def record_consent(self, visitor_id: int, policy_version: str, now: int) -> None:
+    def record_consent(self, visitor_id: int, policy_version: str, now: int, *,
+                       expected_draft_revision: int | None = None) -> None:
         if not policy_version.strip():
             raise ValueError("Policy version is required")
         connection = self._connect()
         try:
+            connection.execute("BEGIN IMMEDIATE")
+            access = connection.execute("SELECT access_status FROM visitors WHERE telegram_id=?",
+                                        (visitor_id,)).fetchone()
+            if access is None or access[0] not in ("allowed", "pending"):
+                raise AccessDenied("Доступ закрыт.")
+            check_draft_revision(connection, visitor_id, expected_draft_revision)
             connection.execute(
                 "INSERT INTO consents (visitor_id, policy_version, accepted_at, action) "
                 "VALUES (?, ?, ?, 'accepted')", (visitor_id, policy_version, now),
             )
+            connection.execute("COMMIT")
             log_event(self.logger, "consent_recorded")
+        except BaseException:
+            if connection.in_transaction:
+                connection.execute("ROLLBACK")
+            raise
         finally:
             connection.close()
 
     def withdraw_consent(self, actor_id: int, visitor_id: int,
-                         policy_version: str, now: int) -> None:
+                         policy_version: str, now: int, *,
+                         expected_draft_revision: int | None = None) -> None:
         self._require_self(actor_id, visitor_id)
+        if not policy_version.strip():
+            raise RuleError("Укажите версию политики.")
         connection = self._connect()
         try:
+            connection.execute("BEGIN IMMEDIATE")
+            require_allowed(connection, visitor_id)
+            check_draft_revision(connection, visitor_id, expected_draft_revision)
+            self._scrub_draft_contacts(connection, visitor_id, now)
             connection.execute(
                 "INSERT INTO consents (visitor_id, policy_version, accepted_at, action) "
                 "VALUES (?, ?, ?, 'withdrawn')", (visitor_id, policy_version, now),
             )
+            connection.execute("COMMIT")
             log_event(self.logger, "consent_withdrawn")
+        except BaseException:
+            if connection.in_transaction:
+                connection.execute("ROLLBACK")
+            raise
         finally:
             connection.close()
 
@@ -303,6 +344,8 @@ class BookingService:
         self._require_admin(actor_id)
         if not name.strip():
             raise ValueError("Template name is required")
+        if len(name.strip()) > 100 or len(description.strip()) > 500 or len(instructions.strip()) > 500:
+            raise RuleError("Название — до 100 символов, описание и инструкция — до 500.")
         connection = self._connect()
         try:
             cursor = connection.execute(
@@ -316,12 +359,16 @@ class BookingService:
 
     def update_template(self, actor_id: int, template_id: int, *, name: str,
                         description: str, instructions: str, is_active: bool,
-                        now: int) -> None:
+                        now: int, expected_revision: int | None = None) -> None:
         self._require_admin(actor_id)
         if not name.strip():
             raise ValueError("Template name is required")
+        if len(name.strip()) > 100 or len(description.strip()) > 500 or len(instructions.strip()) > 500:
+            raise RuleError("Название — до 100 символов, описание и инструкция — до 500.")
         connection = self._connect()
         try:
+            connection.execute("BEGIN IMMEDIATE")
+            self._check_revision(connection, "meeting_templates", template_id, expected_revision)
             changed = connection.execute(
                 "UPDATE meeting_templates SET name = ?, description = ?, instructions = ?, "
                 "is_active = ?, updated_at = ? WHERE id = ?",
@@ -330,7 +377,12 @@ class BookingService:
             ).rowcount
             if not changed:
                 raise RuleError("Шаблон не найден.")
+            connection.execute("COMMIT")
             log_event(self.logger, "template_updated", record_id=template_id)
+        except BaseException:
+            if connection.in_transaction:
+                connection.execute("ROLLBACK")
+            raise
         finally:
             connection.close()
 
@@ -360,11 +412,13 @@ class BookingService:
         finally:
             connection.close()
 
-    def close_interval(self, actor_id: int, interval_id: int, now: int) -> list[int]:
+    def close_interval(self, actor_id: int, interval_id: int, now: int, *,
+                       expected_revision: int | None = None) -> list[int]:
         self._require_admin(actor_id)
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            self._check_revision(connection, "availability_intervals", interval_id, expected_revision)
             connection.execute(
                 "UPDATE availability_intervals SET is_published = 0 WHERE id = ?",
                 (interval_id,),
@@ -461,11 +515,13 @@ class BookingService:
         finally:
             connection.close()
 
-    def unblock_time(self, actor_id: int, block_id: int, now: int) -> None:
+    def unblock_time(self, actor_id: int, block_id: int, now: int, *,
+                     expected_revision: int | None = None) -> None:
         self._require_admin(actor_id)
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            self._check_revision(connection, "manual_blocks", block_id, expected_revision)
             changed = connection.execute("DELETE FROM manual_blocks WHERE id = ?",
                                          (block_id,)).rowcount
             if not changed:
@@ -482,6 +538,35 @@ class BookingService:
             raise
         finally:
             connection.close()
+
+    def start_options(self,actor_id):
+        self._require_admin(actor_id)
+        with closing(self._connect()) as c:
+            c.execute("BEGIN")
+            minutes=[r[0] for r in c.execute("SELECT minute FROM booking_start_options ORDER BY minute")]
+            revision=c.execute("SELECT revision FROM setting_revisions WHERE name='booking_start_options'").fetchone()[0]
+            return dict(minutes=minutes,revision=revision)
+
+    def set_start_options(self,actor_id,minutes,now,*,expected_revision):
+        self._require_admin(actor_id)
+        if len(minutes)>96 or len(set(minutes))!=len(minutes) or any(type(m) is not int or m<0 or m>=1440 or m%15 for m in minutes):
+            raise RuleError("Проверьте варианты начала встречи.")
+        with closing(self._connect()) as c:
+            c.execute("BEGIN IMMEDIATE")
+            revision=c.execute("SELECT revision FROM setting_revisions WHERE name='booking_start_options'").fetchone()[0]
+            if type(expected_revision) is not int or revision!=expected_revision:
+                raise StateConflict("Варианты времени уже изменены. Обновите экран.")
+            c.execute("DELETE FROM booking_start_options")
+            c.executemany("INSERT INTO booking_start_options(minute) VALUES (?)",[(m,) for m in minutes])
+            c.execute("UPDATE setting_revisions SET revision=revision+1 WHERE name='booking_start_options'")
+            c.execute("INSERT INTO audit_actions(actor_telegram_id,action,created_at) VALUES (?,'start_options_changed',?)",(actor_id,now))
+            c.execute("COMMIT")
+
+    def _filter_start_options(self,connection,starts):
+        minutes={r[0] for r in connection.execute("SELECT minute FROM booking_start_options")}
+        if not minutes:return starts
+        zone=ZoneInfo(self._schedule(connection).time_zone)
+        return [s for s in starts if datetime.fromtimestamp(s,zone).hour*60+datetime.fromtimestamp(s,zone).minute in minutes]
 
     def list_slots(self, visitor_id: int, now: int, duration_minutes: int, video_service: str,
                    google_busy: list[BusyInterval] | None = None) -> list[int]:
@@ -509,13 +594,14 @@ class BookingService:
             result = [slot for slot in result if not _manual_blocked(
                 connection, slot, slot + duration_minutes * 60)]
             log_event(self.logger, "slots_calculated", code="ok")
-            return result
+            return self._filter_start_options(connection,result)
         finally:
             connection.close()
 
     def create_hold(self, visitor_id: int, template_id: int, interval_id: int,
                     starts_at: int, duration_minutes: int, video_service: str,
-                    now: int, google_busy: list[BusyInterval] | None = None) -> int:
+                    now: int, google_busy: list[BusyInterval] | None = None, *,
+                    expected_draft_revision: int | None = None) -> int:
         if duration_minutes not in allowed_durations(video_service):
             raise RuleError("Эта длительность недоступна для выбранного сервиса.")
         connection = self._connect()
@@ -527,6 +613,12 @@ class BookingService:
             ).fetchone()
             if visitor is None or visitor[0] != "allowed":
                 raise AccessDenied("Сначала требуется разрешение на запись.")
+            check_draft_revision(connection, visitor_id, expected_draft_revision)
+            if connection.execute(
+                "SELECT 1 FROM bookings WHERE visitor_id=? AND status='held'",
+                (visitor_id,),
+            ).fetchone():
+                raise ActiveDraftExists("У вас уже есть незавершённая запись. Продолжите её или сбросьте выбор.")
             template = connection.execute(
                 "SELECT is_active FROM meeting_templates WHERE id = ?", (template_id,)
             ).fetchone()
@@ -545,6 +637,7 @@ class BookingService:
             )]
             slots = available_slots(now, [interval], duration_minutes, video_service,
                                     self._schedule(connection), occupied + (google_busy or []))
+            slots=self._filter_start_options(connection,slots)
             if starts_at not in slots:
                 raise SlotUnavailable("Выбранное время больше недоступно.")
             ends_at = starts_at + duration_minutes * 60
@@ -566,6 +659,18 @@ class BookingService:
                 "VALUES (?, 'contacts', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (visitor_id, template_id, interval_id, starts_at, ends_at,
                  interval.time_zone, video_service, expires_at, now, now, booking_id),
+            )
+            connection.execute(
+                "INSERT INTO visitor_dialogs "
+                "(visitor_id, step, template_id, duration_minutes, video_service, booking_id, expires_at, updated_at) "
+                "VALUES (?, 'contacts', ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(visitor_id) DO UPDATE SET step=excluded.step, "
+                "template_id=excluded.template_id, duration_minutes=excluded.duration_minutes, "
+                "video_service=excluded.video_service, booking_id=excluded.booking_id, "
+                "expires_at=excluded.expires_at, updated_at=excluded.updated_at, "
+                "contact_name=NULL,contact_email=NULL,contact_phone=NULL,purpose=NULL,used_saved_contacts=0",
+                (visitor_id, template_id, duration_minutes, video_service, booking_id,
+                 now + SESSION_SECONDS, now),
             )
             _queue_job(connection, "hold_expire", expires_at, f"hold:{booking_id}", booking_id)
             _audit_booking(connection, visitor_id, booking_id, "hold_created", now)
@@ -598,6 +703,7 @@ class BookingService:
                 "WHERE id = ?", [(now, now, item) for item in ids],
             )
             connection.executemany("DELETE FROM drafts WHERE booking_id = ?", [(item,) for item in ids])
+            connection.executemany("DELETE FROM visitor_dialogs WHERE booking_id = ?", [(item,) for item in ids])
             connection.executemany(
                 "UPDATE jobs SET status = 'done', claimed_until = NULL "
                 "WHERE booking_id = ? AND kind = 'hold_expire'",
@@ -607,30 +713,33 @@ class BookingService:
                 _audit_booking(connection, None, item, "hold_expired", now)
             log_event(self.logger, "holds_expired", code="sweep")
 
+    def _abandon_hold(self, connection: sqlite3.Connection, visitor_id: int,
+                      booking_id: int, now: int) -> None:
+        row = connection.execute(
+            "SELECT visitor_id, status FROM bookings WHERE id = ?", (booking_id,)
+        ).fetchone()
+        if row is None or row[0] != visitor_id:
+            raise AccessDenied("Удержание времени не найдено.")
+        if row[1] == "held":
+            connection.execute(
+                "UPDATE bookings SET status = 'expired', completed_at = ?, updated_at = ? "
+                "WHERE id = ?", (now, now, booking_id),
+            )
+            connection.execute("DELETE FROM drafts WHERE booking_id = ?", (booking_id,))
+            connection.execute(
+                "UPDATE jobs SET status = 'done' WHERE booking_id = ? AND kind = 'hold_expire'",
+                (booking_id,),
+            )
+            _audit_booking(connection, visitor_id, booking_id, "hold_abandoned", now)
+
     def abandon_hold(self, visitor_id: int, booking_id: int, now: int) -> None:
         """Release an unfinished form without sending a meeting cancellation notice."""
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
-            row = connection.execute(
-                "SELECT visitor_id, status FROM bookings WHERE id = ?", (booking_id,)
-            ).fetchone()
-            if row is None or row[0] != visitor_id:
-                raise AccessDenied("Удержание времени не найдено.")
-            if row[1] == "held":
-                connection.execute(
-                    "UPDATE bookings SET status = 'expired', completed_at = ?, updated_at = ? "
-                    "WHERE id = ?", (now, now, booking_id),
-                )
-                connection.execute("DELETE FROM drafts WHERE booking_id = ?", (booking_id,))
-                connection.execute(
-                    "UPDATE jobs SET status = 'done' WHERE booking_id = ? AND kind = 'hold_expire'",
-                    (booking_id,),
-                )
-                _audit_booking(connection, visitor_id, booking_id, "hold_abandoned", now)
+            self._abandon_hold(connection, visitor_id, booking_id, now)
             connection.execute("COMMIT")
-            if row[1] == "held":
-                log_event(self.logger, "hold_abandoned", record_id=booking_id)
+            log_event(self.logger, "hold_abandoned", record_id=booking_id)
         except BaseException:
             if connection.in_transaction:
                 connection.execute("ROLLBACK")
@@ -642,6 +751,7 @@ class BookingService:
         self._require_self(actor_id, visitor_id)
         connection = self._connect()
         try:
+            require_allowed(connection, visitor_id)
             row = connection.execute(
                 "SELECT display_name, email, phone, username FROM visitors "
                 "WHERE telegram_id = ?", (visitor_id,),
@@ -665,12 +775,17 @@ class BookingService:
             connection.close()
 
     def correct_saved_contacts(self, actor_id: int, visitor_id: int, *, name: str, email: str,
-                               phone: str | None, now: int) -> None:
+                               phone: str | None, now: int, expected_revision: int | None = None,
+                               expected_draft_revision: int | None = None) -> None:
         self._require_self(actor_id, visitor_id)
-        if not name.strip() or not EMAIL_PATTERN.fullmatch(email.strip()):
+        if not valid_visitor_text(name) or not valid_visitor_text(email) or not valid_email(email) or (phone and not valid_phone(phone)):
             raise RuleError("Укажите имя и корректный email.")
         connection = self._connect()
         try:
+            connection.execute("BEGIN IMMEDIATE")
+            self._check_revision(connection, "visitors", visitor_id, expected_revision)
+            require_allowed(connection, visitor_id)
+            check_draft_revision(connection, visitor_id, expected_draft_revision)
             changed = connection.execute(
                 "UPDATE visitors SET display_name = ?, email = ?, phone = ?, last_used_at = ? "
                 "WHERE telegram_id = ?",
@@ -679,23 +794,51 @@ class BookingService:
             ).rowcount
             if not changed:
                 raise RuleError("Посетитель не найден.")
+            if not connection.execute("UPDATE visitor_dialogs SET updated_at=? WHERE visitor_id=?",
+                                      (now, visitor_id)).rowcount:
+                connection.execute("UPDATE draft_generations SET revision=revision+1 WHERE visitor_id=?",
+                                   (visitor_id,))
+            connection.execute("COMMIT")
             log_event(self.logger, "saved_contacts_corrected")
+        except BaseException:
+            if connection.in_transaction:
+                connection.execute("ROLLBACK")
+            raise
         finally:
             connection.close()
 
-    def clear_saved_contacts(self, actor_id: int, visitor_id: int, now: int) -> None:
+    def _scrub_draft_contacts(self, connection, visitor_id: int, now: int) -> None:
+        connection.execute(
+            "UPDATE drafts SET contact_name=NULL, contact_email=NULL, contact_phone=NULL, "
+            "updated_at=? WHERE visitor_id=?", (now, visitor_id),
+        )
+        changed = connection.execute(
+            "UPDATE visitor_dialogs SET contact_name=NULL, contact_email=NULL, "
+            "contact_phone=NULL, used_saved_contacts=0, "
+            "step=CASE WHEN booking_id IS NOT NULL THEN 'name' "
+            "WHEN step LIKE 'profile_%' THEN 'profile_name' ELSE step END, "
+            "updated_at=? WHERE visitor_id=?",
+            (now, visitor_id),
+        ).rowcount
+        if not changed:
+            connection.execute(
+                "UPDATE draft_generations SET revision=revision+1 WHERE visitor_id=?", (visitor_id,),
+            )
+
+    def clear_saved_contacts(self, actor_id: int, visitor_id: int, now: int, *,
+                             expected_revision: int | None = None,
+                             expected_draft_revision: int | None = None) -> None:
         self._require_self(actor_id, visitor_id)
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            require_allowed(connection, visitor_id)
+            self._check_revision(connection, "visitors", visitor_id, expected_revision)
+            check_draft_revision(connection, visitor_id, expected_draft_revision)
+            self._scrub_draft_contacts(connection, visitor_id, now)
             connection.execute(
                 "UPDATE visitors SET username = NULL, display_name = NULL, email = NULL, phone = NULL, "
                 "last_used_at = ? WHERE telegram_id = ?", (now, visitor_id),
-            )
-            connection.execute(
-                "UPDATE drafts SET contact_name = NULL, contact_email = NULL, "
-                "contact_phone = NULL, updated_at = ? WHERE visitor_id = ?",
-                (now, visitor_id),
             )
             connection.execute("COMMIT")
             log_event(self.logger, "saved_contacts_cleared")
@@ -710,14 +853,18 @@ class BookingService:
                        username: str | None, email: str, phone: str | None,
                        purpose: str, policy_version: str, now: int,
                        google_busy: list[BusyInterval] | None = None,
-                       used_saved_contacts: bool = False) -> int:
-        if not name.strip() or not username or not username.strip() or \
-                not EMAIL_PATTERN.fullmatch(email.strip()) or not purpose.strip():
+                       used_saved_contacts: bool = False,
+                       expected_draft_revision: int | None = None) -> int:
+        if not valid_visitor_text(name) or not username or not username.strip() or \
+                not valid_visitor_text(email) or not valid_email(email) or not valid_visitor_text(purpose) or \
+                (phone and not valid_phone(phone)):
             raise RuleError("Укажите имя, Telegram username, email и цель встречи.")
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            require_allowed(connection, visitor_id)
             self._expire_holds(connection, now)
+            check_draft_revision(connection, visitor_id, expected_draft_revision)
             row = connection.execute(
                 "SELECT visitor_id, template_id, availability_id, starts_at, ends_at, "
                 "time_zone, status, hold_expires_at, video_service "
@@ -781,6 +928,7 @@ class BookingService:
                  phone.strip() if phone else None, now, visitor_id),
             )
             connection.execute("DELETE FROM drafts WHERE booking_id = ?", (booking_id,))
+            connection.execute("DELETE FROM visitor_dialogs WHERE booking_id = ?", (booking_id,))
             connection.execute(
                 "UPDATE jobs SET status = 'done' WHERE booking_id = ? AND kind = 'hold_expire'",
                 (booking_id,),
@@ -805,7 +953,7 @@ class BookingService:
             connection.close()
 
     def admin_decision(self, actor_id: int, booking_id: int, approve: bool,
-                       now: int) -> str:
+                       now: int, *, expected_revision: int | None = None) -> str:
         self._require_admin(actor_id)
         connection = self._connect()
         try:
@@ -816,6 +964,7 @@ class BookingService:
             ).fetchone()
             if row is None:
                 raise RuleError("Заявка не найдена.")
+            self._check_revision(connection, "bookings", booking_id, expected_revision)
             if row[0] == "awaiting_link" and approve:
                 connection.execute("COMMIT")
                 return "awaiting_link"
@@ -845,13 +994,15 @@ class BookingService:
         finally:
             connection.close()
 
-    def begin_calendar_creation(self, booking_id: int, video_url: str, now: int) -> str:
+    def begin_calendar_creation(self, booking_id: int, video_url: str, now: int, *,
+                                expected_revision: int | None = None) -> str:
         """Record a link received before deadline; stage 3 performs the Google call."""
         if not video_url.strip():
             raise ValueError("Video URL is required")
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            self._check_revision(connection, "bookings", booking_id, expected_revision)
             row = connection.execute(
                 "SELECT status, decision_deadline_at FROM bookings WHERE id = ?",
                 (booking_id,),
@@ -1048,16 +1199,18 @@ class BookingService:
         finally:
             connection.close()
 
-    def cancel_by_visitor(self, visitor_id: int, booking_id: int, now: int) -> str:
+    def cancel_by_visitor(self, visitor_id: int, booking_id: int, now: int, *, expected_revision: int | None = None) -> str:
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            require_allowed(connection, visitor_id)
             row = connection.execute(
                 "SELECT visitor_id, status, starts_at, cancel_requested_at "
                 "FROM bookings WHERE id = ?", (booking_id,),
             ).fetchone()
             if row is None or row[0] != visitor_id:
                 raise AccessDenied("Заявка не найдена.")
+            self._check_revision(connection, "bookings", booking_id, expected_revision)
             if row[1] in TERMINAL_STATUSES:
                 connection.execute("COMMIT")
                 return row[1]
@@ -1070,6 +1223,7 @@ class BookingService:
                     "updated_at = ? WHERE id = ?", (now, now, booking_id),
                 )
                 connection.execute("DELETE FROM drafts WHERE booking_id = ?", (booking_id,))
+                connection.execute("DELETE FROM visitor_dialogs WHERE booking_id = ?", (booking_id,))
                 connection.execute(
                     "UPDATE jobs SET status = 'done' WHERE booking_id = ? AND status != 'done'",
                     (booking_id,),
@@ -1148,7 +1302,7 @@ class BookingService:
         finally:
             connection.close()
 
-    def cancel_by_admin(self, actor_id: int, booking_id: int, now: int) -> str:
+    def cancel_by_admin(self, actor_id: int, booking_id: int, now: int, *, expected_revision: int | None = None) -> str:
         self._require_admin(actor_id)
         connection = self._connect()
         try:
@@ -1159,6 +1313,7 @@ class BookingService:
             ).fetchone()
             if row is None:
                 raise RuleError("Заявка не найдена.")
+            self._check_revision(connection, "bookings", booking_id, expected_revision)
             if row[0] in TERMINAL_STATUSES:
                 connection.execute("COMMIT")
                 return row[0]
@@ -1171,6 +1326,7 @@ class BookingService:
                     "updated_at = ? WHERE id = ?", (now, now, booking_id),
                 )
                 connection.execute("DELETE FROM drafts WHERE booking_id = ?", (booking_id,))
+                connection.execute("DELETE FROM visitor_dialogs WHERE booking_id = ?", (booking_id,))
                 connection.execute(
                     "UPDATE jobs SET status = 'done' WHERE booking_id = ? AND status != 'done'",
                     (booking_id,),

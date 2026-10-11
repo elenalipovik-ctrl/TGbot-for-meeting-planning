@@ -51,3 +51,12 @@ def test_command_menu_offers_start_without_typing(tmp_path):
         ("start", "Открыть меню")
     ]
     assert bot.button.type == "commands"
+
+
+def test_form_callback_includes_revision_and_preserves_navigation():
+    from meeting_bot.telegram_app import _callback_data
+    assert _callback_data("send", 12) == "r:12:send"
+    assert _callback_data("time:1791200000", 12) == "r:12:time:1791200000"
+    assert _callback_data("profile:delete:yes", 12) == "r:12:profile:delete:yes"
+    assert _callback_data("menu", 12) == "menu"
+    assert len(_callback_data("time:1791200000", 123456789).encode("utf-8")) <= 64

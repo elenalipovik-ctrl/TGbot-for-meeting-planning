@@ -60,6 +60,8 @@ def claim_due_job(path: Path, now: int, *, lease_seconds: int = 60,
 
 
 def _cleanup(connection: sqlite3.Connection, now: int) -> tuple[int, int]:
+    for table in ("api_sessions", "api_auth_exchanges", "api_rate_limits", "api_operations"):
+        connection.execute("DELETE FROM " + table + " WHERE expires_at<=?", (now,))
     zone = connection.execute(
         "SELECT value FROM app_settings WHERE key = 'time_zone'"
     ).fetchone()[0]
@@ -156,6 +158,7 @@ def process_job(path: Path, job_id: int, now: int,
             ).rowcount
             if changed:
                 connection.execute("DELETE FROM drafts WHERE booking_id = ?", (booking_id,))
+                connection.execute("DELETE FROM visitor_dialogs WHERE booking_id = ?", (booking_id,))
                 _audit_booking(connection, None, booking_id, "hold_expired", now)
         elif kind == "request_expire":
             row = connection.execute(

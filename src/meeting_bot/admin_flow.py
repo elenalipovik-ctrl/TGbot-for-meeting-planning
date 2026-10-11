@@ -3,40 +3,22 @@
 import json
 import re
 from datetime import datetime
-from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
+from .queries import Queries
+from .commands import Commands
 from .calendar_flow import confirm_with_google
 from .google_calendar import CalendarAuthExpired, CalendarError, GoogleCalendar
 from .rules import ReviewSchedule, ReviewWindow
 from .service import AccessDenied, BookingService, RuleError, SlotUnavailable, StorageUnavailable
 from .technical_log import log_event
 from .visitor_flow import Reply, _row
+from .validation import MAX_ADMIN_TEXT, SERVICE_HOSTS, valid_video_url
 
 
 ADMIN_SESSION_SECONDS = 30 * 60
-MAX_ADMIN_TEXT = 1000
 INTERVAL_PATTERN = re.compile(r"^(\d{2}\.\d{2}\.\d{4})\s+(\d{2}:\d{2})-(\d{2}:\d{2})$")
 REVIEW_PATTERN = re.compile(r"^([1-7](?:[-,][1-7])*)\s+(\d{2}:\d{2})-(\d{2}:\d{2})$")
-SERVICE_HOSTS = {"telemost": "telemost.yandex.ru", "zoom": "zoom.us"}
-
-
-def valid_video_url(value: str, service: str) -> bool:
-    """Accept only HTTPS links on the selected provider's real host."""
-    try:
-        parsed = urlparse(value.strip())
-        hostname = (parsed.hostname or "").lower()
-        root = SERVICE_HOSTS[service]
-        if service == "telemost":
-            host_ok = hostname == root
-        else:
-            host_ok = hostname == root or hostname.endswith("." + root)
-        return (parsed.scheme == "https" and host_ok and parsed.port in (None, 443)
-                and not parsed.username and not parsed.password and bool(parsed.path.strip("/")))
-    except (ValueError, KeyError):
-        return False
-
-
 class AdminFlow:
     def __init__(self, service: BookingService, calendar: GoogleCalendar):
         self.service = service
@@ -168,11 +150,7 @@ class AdminFlow:
                 return Reply(f"Статус доступа обновлён: {status}.",
                              (_row(("Запросы доступа", "adm:access")),))
         if action == "adm:bookings":
-            rows = self._many(
-                "SELECT id, starts_at, status FROM bookings "
-                "WHERE status IN ('pending', 'awaiting_link', 'creating_calendar', "
-                "'confirmed', 'attention') "
-                "ORDER BY submitted_at, id LIMIT 10")
+            rows = [row[:3] for row in Queries(self.service).pending_queue(self.service.administrator_id)]
             buttons = tuple(_row((f"№{ident} · {self._local(starts)} · {status}",
                                   f"adm:booking:{ident}"))
                             for ident, starts, status in rows)
@@ -245,7 +223,8 @@ class AdminFlow:
                 result = self.service.admin_decision(self.service.administrator_id,
                                                      booking_id, approve, now)
                 if result == "awaiting_link":
-                    self._save("video_link", now, object_id=booking_id)
+                    self._save("video_link", now, object_id=booking_id,
+                               payload={"revision": self._one("SELECT revision FROM bookings WHERE id=?", (booking_id,))[0]})
                     return Reply("Заявка согласована. Создайте встречу в выбранном сервисе и "
                                  "пришлите её HTTPS-ссылку. До успешного создания события "
                                  "Google посетитель не получит подтверждение.")
@@ -258,7 +237,8 @@ class AdminFlow:
                 return self._stale()
             if self.service.booking_status(booking_id) != "awaiting_link":
                 return self._stale()
-            self._save("video_link", now, object_id=booking_id)
+            self._save("video_link", now, object_id=booking_id,
+                       payload={"revision": self._one("SELECT revision FROM bookings WHERE id=?", (booking_id,))[0]})
             return Reply("Пришлите HTTPS-ссылку встречи в выбранном сервисе.")
         if action.startswith("adm:retry_calendar:"):
             try:
@@ -362,13 +342,13 @@ class AdminFlow:
                     template_id = int(action[len(prefix):])
                 except ValueError:
                     return self._stale()
-                row = self._one("SELECT name, description, instructions, is_active "
+                row = self._one("SELECT name, description, instructions, is_active, revision "
                                 "FROM meeting_templates WHERE id = ?", (template_id,))
                 if row is None:
                     return self._stale()
                 if prefix.endswith("edit:"):
                     self._save("template_name", now, object_id=template_id,
-                               payload={"active": bool(row[3])})
+                               payload={"active": bool(row[3]), "revision": row[4]})
                     return Reply("Напишите новое название шаблона (до 100 символов).")
                 self.service.update_template(self.service.administrator_id, template_id,
                                              name=row[0], description=row[1],
@@ -411,7 +391,8 @@ class AdminFlow:
             if row is None or not valid_video_url(value, row[0]):
                 log_event(self.service.logger, "video_url_rejected", code="format")
                 return Reply("Нужна HTTPS-ссылка выбранного сервиса: Яндекс Телемост или Zoom.")
-            result = confirm_with_google(self.service, self.calendar, object_id, value, now)
+            result = Commands(self.service, self.calendar, policy_version="").confirm(
+                self.service.administrator_id, object_id, value, now, revision=payload.get("revision"))
             self._clear()
             return Reply("Встреча подтверждена в Google Календаре." if result == "confirmed"
                          else "Статус заявки: " + result,
@@ -497,41 +478,22 @@ class AdminFlow:
                                              name=payload["name"],
                                              description=payload["description"],
                                              instructions=value,
-                                             is_active=payload["active"], now=now)
+                                             is_active=payload["active"], now=now,
+                                             expected_revision=payload["revision"])
             self._clear()
             return Reply(f"Шаблон №{template_id} сохранён.",
                          (_row(("К шаблонам", "adm:templates")),))
         return self._stale()
 
     def _stats(self, days: int, now: int) -> Reply:
-        since = now - days * 86400
-        access = self._one("SELECT COUNT(*) FROM access_requests WHERE requested_at >= ?",
-                           (since,))[0]
-        rows = self._many("SELECT status, video_service, visitor_id, submitted_at, "
-                          "used_saved_contacts "
-                          "FROM bookings WHERE submitted_at >= ?", (since,))
-        count = lambda status: sum(row[0] == status for row in rows)
-        repeat = self._one(
-            "SELECT COUNT(*) FROM bookings b WHERE b.submitted_at >= ? AND "
-            "b.visitor_id IS NOT NULL AND EXISTS (SELECT 1 FROM bookings older "
-            "WHERE older.visitor_id = b.visitor_id AND older.submitted_at IS NOT NULL "
-            "AND (older.submitted_at < b.submitted_at OR "
-            "(older.submitted_at = b.submitted_at AND older.id < b.id)))", (since,))[0]
-        average_seconds = self._one(
-            "SELECT AVG(a.created_at - b.submitted_at) FROM bookings b "
-            "JOIN audit_actions a ON a.booking_id = b.id "
-            "AND a.action IN ('awaiting_link', 'rejected') "
-            "WHERE b.submitted_at >= ?", (since,))[0]
-        average = round(average_seconds / 60) if average_seconds is not None else 0
+        stats = Queries(self.service).stats(self.service.administrator_id, days, now)
         return Reply(
             f"Сводка за {days} дней (без контактов):\n"
-            f"Запросы доступа: {access}; заявки: {len(rows)}; подтверждены: {count('confirmed')}; "
-            f"отклонены: {count('rejected')}; истекли: {count('expired')}; "
-            f"отменены: {count('cancelled_by_visitor') + count('cancelled_by_admin')}; "
-            f"повторные записи: {repeat}; сохранённые контакты: {sum(row[4] for row in rows)}; "
-            f"Телемост: {sum(row[1] == 'telemost' for row in rows)}; "
-            f"Zoom: {sum(row[1] == 'zoom' for row in rows)}; "
-            f"среднее время решения: {average} мин.",
+            f"Запросы доступа: {stats['access']}; заявки: {stats['total']}; подтверждены: {stats['confirmed']}; "
+            f"отклонены: {stats['rejected']}; истекли: {stats['expired']}; "
+            f"отменены: {stats['cancelled']}; повторные записи: {stats['repeat']}; "
+            f"сохранённые контакты: {stats['reused']}; Телемост: {stats['telemost']}; Zoom: {stats['zoom']}; "
+            f"среднее время решения: {stats['average_minutes']} мин.",
             (_row(("7 дней", "adm:stats:7"), ("30 дней", "adm:stats:30")),
              _row(("В меню", "adm:menu")),))
 

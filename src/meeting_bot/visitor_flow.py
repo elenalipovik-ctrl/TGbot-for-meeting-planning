@@ -1,22 +1,27 @@
 """Persistent, transport-neutral visitor conversation for stage 4."""
 
-import re
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from .calendar_flow import submit_with_google
+from .queries import Queries
+from .drafts import DraftStore
+from .errors import StateConflict
 from .google_calendar import CalendarError, GoogleCalendar
 from .rules import GAP_SECONDS, allowed_durations, decision_deadline
-from .service import (EMAIL_PATTERN, AccessDenied, BookingService, RuleError,
+from .service import (AccessDenied, BookingService, RuleError,
                       SlotUnavailable, StorageUnavailable)
 from .technical_log import log_event
+from .validation import (MAX_VISITOR_TEXT, PHONE_PATTERN, valid_email,
+                         valid_phone, valid_visitor_text)
 
 
+_draft_revision_context: ContextVar[int | None] = ContextVar("draft_revision", default=None)
 SESSION_SECONDS = 30 * 60
-MAX_TEXT = 500
-PHONE_PATTERN = re.compile(r"^\+?[0-9 ()-]{7,25}$")
+MAX_TEXT = MAX_VISITOR_TEXT
 STATUS_LABELS = {
     "held": "Заполнение заявки", "pending": "На рассмотрении",
     "awaiting_link": "Ожидает ссылки", "creating_calendar": "Подтверждается",
@@ -36,6 +41,7 @@ class Button:
 class Reply:
     text: str
     rows: tuple[tuple[Button, ...], ...] = ()
+    draft_revision: int | None = None
 
 
 def _row(*items: tuple[str, str]) -> tuple[Button, ...]:
@@ -68,53 +74,23 @@ class VisitorFlow:
             connection.close()
 
     def _dialog(self, visitor_id: int, now: int):
-        row = self._one(
-            "SELECT step, template_id, duration_minutes, video_service, selected_day, "
-            "booking_id, contact_name, contact_email, contact_phone, purpose, expires_at, "
-            "used_saved_contacts "
-            "FROM visitor_dialogs WHERE visitor_id = ?", (visitor_id,))
-        if row and row[10] <= now:
-            self._clear(visitor_id, now)
-            return None
-        return row
+        snapshot = DraftStore(self.service).read(visitor_id, visitor_id, now)
+        expected = _draft_revision_context.get()
+        if expected is not None and snapshot.revision != expected:
+            raise StateConflict("Запись уже изменена. Обновите данные и повторите действие.")
+        return snapshot.values
 
     def _save(self, visitor_id: int, step: str, now: int, **fields) -> None:
-        allowed = {"template_id", "duration_minutes", "video_service", "selected_day",
-                   "booking_id", "contact_name", "contact_email", "contact_phone", "purpose",
-                   "used_saved_contacts"}
-        if set(fields) - allowed:
-            raise ValueError("Unexpected dialog field")
-        connection = self.service._connect()
-        try:
-            connection.execute("BEGIN IMMEDIATE")
-            connection.execute(
-                "INSERT OR IGNORE INTO visitor_dialogs (visitor_id, step, expires_at, updated_at) "
-                "VALUES (?, ?, ?, ?)", (visitor_id, step, now + SESSION_SECONDS, now))
-            assignments = ", ".join(f"{key} = ?" for key in fields)
-            clause = f", {assignments}" if assignments else ""
-            connection.execute(
-                f"UPDATE visitor_dialogs SET step = ?, expires_at = ?, updated_at = ?{clause} "
-                "WHERE visitor_id = ?",
-                (step, now + SESSION_SECONDS, now, *fields.values(), visitor_id))
-            connection.execute("COMMIT")
-            log_event(self.service.logger, "visitor_dialog_step", code=step)
-        except BaseException:
-            if connection.in_transaction:
-                connection.execute("ROLLBACK")
-            raise
-        finally:
-            connection.close()
+        snapshot = DraftStore(self.service).save(
+            visitor_id, visitor_id, step, now,
+            expected_revision=_draft_revision_context.get(), **fields)
+        _draft_revision_context.set(snapshot.revision)
+        log_event(self.service.logger, "visitor_dialog_step", code=step)
 
     def _clear(self, visitor_id: int, now: int) -> None:
-        row = self._one("SELECT booking_id FROM visitor_dialogs WHERE visitor_id = ?",
-                        (visitor_id,))
-        if row and row[0]:
-            self.service.abandon_hold(visitor_id, row[0], now)
-        connection = self.service._connect()
-        try:
-            connection.execute("DELETE FROM visitor_dialogs WHERE visitor_id = ?", (visitor_id,))
-        finally:
-            connection.close()
+        snapshot = DraftStore(self.service).reset(
+            visitor_id, visitor_id, now, expected_revision=_draft_revision_context.get())
+        _draft_revision_context.set(snapshot.revision)
 
     def _status(self, visitor_id: int):
         row = self._one("SELECT access_status FROM visitors WHERE telegram_id = ?",
@@ -247,9 +223,7 @@ class VisitorFlow:
              _row(("Не согласен", "stop")),))
 
     def _mine(self, visitor_id: int) -> Reply:
-        bookings = self._many(
-            "SELECT id, starts_at, status FROM bookings WHERE visitor_id = ? "
-            "AND status != 'held' ORDER BY created_at DESC LIMIT 10", (visitor_id,))
+        bookings = [row[:3] for row in Queries(self.service).own_bookings(visitor_id, limit=10)]
         if not bookings:
             return Reply("У вас пока нет заявок.", (_row(("В меню", "menu")),))
         lines = [f"№{ident} — {self._local(start)} МСК — {STATUS_LABELS.get(status, status)}"
@@ -275,14 +249,68 @@ class VisitorFlow:
     def handle(self, visitor_id: int, username: str | None, action: str,
                now: int, *, text: str | None = None) -> Reply:
         """Handle one private-chat action. Never log visitor-entered text."""
+        token = _draft_revision_context.set(None)
         try:
-            return self._handle(visitor_id, username, action, now, text=text)
+            expected = None
+            if action.startswith("r:"):
+                try:
+                    _, raw_revision, action = action.split(":", 2)
+                    expected = int(raw_revision)
+                    if expected < 0:
+                        raise ValueError
+                except ValueError:
+                    return self._stale()
+            if self._status(visitor_id) == "allowed":
+                snapshot = DraftStore(self.service).read(visitor_id, visitor_id, now)
+                if expected is not None and expected != snapshot.revision:
+                    raise StateConflict("Запись уже изменена. Обновите данные и повторите действие.")
+                _draft_revision_context.set(snapshot.revision)
+                if snapshot.expired and action == "send":
+                    return Reply("Удержание времени истекло. Выберите время заново.",
+                                 (_row(("Записаться", "book")),))
+            reply = self._handle(visitor_id, username, action, now, text=text)
+            return Reply(reply.text, reply.rows, _draft_revision_context.get())
         except (AccessDenied, RuleError, SlotUnavailable) as error:
             return Reply(str(error), (_row(("В меню", "menu")),))
         except (CalendarError, StorageUnavailable):
             log_event(self.service.logger, "visitor_action_failed", code="dependency")
             return Reply("Сервис временно недоступен. Попробуйте позже.",
                          (_row(("В меню", "menu")),))
+        finally:
+            _draft_revision_context.reset(token)
+
+    def _resume(self, visitor_id: int, now: int) -> Reply:
+        dialog = self._dialog(visitor_id, now)
+        if dialog is None:
+            return self._templates(visitor_id, now)
+        step = dialog[0]
+        if step == "template":
+            return self._templates(visitor_id, now)
+        if step == "duration":
+            return self._durations(visitor_id, dialog[1], now)
+        if step == "video":
+            return self._videos(visitor_id, dialog[2], now)
+        if step == "day":
+            return self._days(visitor_id, dialog[2], dialog[3], now)
+        if step == "time":
+            return self._times(visitor_id, dialog, dialog[4], now)
+        if step in ("contacts", "reuse"):
+            return self._contacts(visitor_id, dialog[5], now)
+        if step == "review":
+            return self._review(visitor_id, dialog, now)
+        if step == "consent":
+            return self._consent()
+        prompts = {"name": "Напишите, как к вам обращаться.",
+                   "email": "Напишите email для приглашения.",
+                   "phone": "Напишите телефон или нажмите «Пропустить».",
+                   "purpose": "Напишите цель встречи.",
+                   "profile_name": "Напишите новое имя.",
+                   "profile_email": "Напишите email для приглашения.",
+                   "profile_phone": "Напишите телефон или нажмите «Пропустить»."}
+        if step in ("phone", "profile_phone"):
+            return Reply(prompts[step], (_row(("Пропустить", "phone:skip"), ("Отмена", "stop")),))
+        return Reply(prompts.get(step, "Продолжите заполнение заявки."),
+                     (_row(("Отмена", "stop")),))
 
     def _handle(self, visitor_id: int, username: str | None, action: str,
                 now: int, *, text: str | None) -> Reply:
@@ -301,7 +329,6 @@ class VisitorFlow:
             self.service.record_consent(visitor_id, self.policy_version, now)
             return self._menu(visitor_id, username, now)
         if action == "menu":
-            self._clear(visitor_id, now)
             return self._menu(visitor_id, username, now)
         self._require_allowed(visitor_id)
         self.service.touch_visitor(visitor_id, visitor_id, username, now)
@@ -316,8 +343,9 @@ class VisitorFlow:
             return Reply("Удалить сохранённые контактные данные? История заявок останется.",
                          (_row(("Да, удалить", "profile:delete:yes"), ("Назад", "profile")),))
         if action == "profile:delete:yes":
-            self._clear(visitor_id, now)
-            self.service.clear_saved_contacts(visitor_id, visitor_id, now)
+            self.service.clear_saved_contacts(visitor_id, visitor_id, now,
+                                              expected_draft_revision=_draft_revision_context.get())
+            _draft_revision_context.set(_draft_revision_context.get() + 1)
             return self._profile(visitor_id)
         if action == "profile:withdraw":
             return Reply("Отозвать согласие на обработку данных для новых заявок? "
@@ -326,8 +354,9 @@ class VisitorFlow:
                          (_row(("Да, отозвать", "profile:withdraw:yes"),
                                ("Назад", "profile")),))
         if action == "profile:withdraw:yes":
-            self._clear(visitor_id, now)
-            self.service.withdraw_consent(visitor_id, visitor_id, self.policy_version, now)
+            self.service.withdraw_consent(visitor_id, visitor_id, self.policy_version, now,
+                                           expected_draft_revision=_draft_revision_context.get())
+            _draft_revision_context.set(_draft_revision_context.get() + 1)
             return Reply("Согласие отозвано. Для новой заявки потребуется новое согласие.",
                          (_row(("В меню", "menu")),))
         if action == "profile:edit":
@@ -355,11 +384,23 @@ class VisitorFlow:
                 return Reply("Запрос на отмену принят. Подтверждение придёт после проверки календаря.",
                              (_row(("Мои заявки", "mine")),))
             return Reply("Заявка отменена.", (_row(("Мои заявки", "mine")),))
+        if action == "draft:continue":
+            return self._resume(visitor_id, now)
+        if action == "draft:reset":
+            return Reply("Сбросить незавершённую запись и освободить удерживаемое время?",
+                         (_row(("Да, сбросить", "draft:reset:yes"),
+                               ("Продолжить запись", "draft:continue")),))
+        if action == "draft:reset:yes":
+            self._clear(visitor_id, now)
+            return self._templates(visitor_id, now)
         if action == "book":
             if not username:
                 return Reply("Для записи установите username в настройках Telegram, затем вернитесь.",
                              (_row(("Проверить снова", "book")),))
-            self._clear(visitor_id, now)
+            if self._dialog(visitor_id, now) is not None:
+                return Reply("У вас есть незавершённая запись. Продолжить её?",
+                             (_row(("Продолжить", "draft:continue"),
+                                   ("Сбросить и начать заново", "draft:reset")),))
             return self._templates(visitor_id, now)
         dialog = self._dialog(visitor_id, now)
         if dialog is None:
@@ -423,7 +464,10 @@ class VisitorFlow:
             busy = self.calendar.freebusy(slot - GAP_SECONDS,
                                           slot + dialog[2] * 60 + GAP_SECONDS)
             booking_id = self.service.create_hold(
-                visitor_id, dialog[1], row[0], slot, dialog[2], dialog[3], now, busy)
+                visitor_id, dialog[1], row[0], slot, dialog[2], dialog[3], now, busy,
+                expected_draft_revision=_draft_revision_context.get())
+            if _draft_revision_context.get() is not None:
+                _draft_revision_context.set(_draft_revision_context.get() + 1)
             return self._contacts(visitor_id, booking_id, now)
         if step == "reuse" and action in ("reuse", "edit"):
             if action == "edit":
@@ -443,7 +487,8 @@ class VisitorFlow:
                 return Reply("Напишите цель встречи.", (_row(("Отмена", "stop")),))
             return self._save_profile(visitor_id, now)
         if step == "consent" and action == "consent:yes":
-            self.service.record_consent(visitor_id, self.policy_version, now)
+            self.service.record_consent(visitor_id, self.policy_version, now,
+                                        expected_draft_revision=_draft_revision_context.get())
             self._save(visitor_id, "review", now)
             return self._review(visitor_id, self._dialog(visitor_id, now), now)
         if step == "review" and action == "send":
@@ -460,7 +505,10 @@ class VisitorFlow:
                 self.service, self.calendar, visitor_id, dialog[5], name=dialog[6],
                 username=username, email=dialog[7], phone=dialog[8], purpose=dialog[9],
                 policy_version=self.policy_version, now=now,
-                used_saved_contacts=bool(dialog[11]))
+                used_saved_contacts=bool(dialog[11]),
+                expected_draft_revision=_draft_revision_context.get())
+            if _draft_revision_context.get() is not None:
+                _draft_revision_context.set(_draft_revision_context.get() + 1)
             self._clear(visitor_id, now)
             log_event(self.service.logger, "visitor_request_sent", record_id=booking_id)
             return Reply(f"Заявка №{booking_id} отправлена администратору. "
@@ -468,7 +516,7 @@ class VisitorFlow:
                          (_row(("Мои заявки", "mine")),))
         if action == "text" and text is not None:
             value = text.strip()
-            if not value or len(value) > MAX_TEXT:
+            if not valid_visitor_text(value):
                 log_event(self.service.logger, "visitor_input_rejected", code="length")
                 return Reply("Напишите текст длиной от 1 до 500 символов.")
             if step in ("name", "profile_name"):
@@ -476,7 +524,7 @@ class VisitorFlow:
                            contact_name=value)
                 return Reply("Напишите email для приглашения.", (_row(("Отмена", "stop")),))
             if step in ("email", "profile_email"):
-                if not EMAIL_PATTERN.fullmatch(value):
+                if not valid_email(value):
                     log_event(self.service.logger, "visitor_input_rejected", code="email")
                     return Reply("Укажите корректный email.")
                 self._save(visitor_id, "phone" if step == "email" else "profile_phone", now,
@@ -484,7 +532,7 @@ class VisitorFlow:
                 return Reply("Напишите телефон или нажмите «Пропустить».",
                              (_row(("Пропустить", "phone:skip"), ("Отмена", "stop")),))
             if step in ("phone", "profile_phone"):
-                if not PHONE_PATTERN.fullmatch(value):
+                if not valid_phone(value):
                     log_event(self.service.logger, "visitor_input_rejected", code="phone")
                     return Reply("Укажите телефон в международном формате или пропустите.")
                 self._save(visitor_id, "purpose" if step == "phone" else "profile_done", now,
@@ -501,8 +549,13 @@ class VisitorFlow:
         dialog = self._dialog(visitor_id, now)
         self.service.correct_saved_contacts(visitor_id, visitor_id,
                                             name=dialog[6], email=dialog[7],
-                                            phone=dialog[8], now=now)
-        self._clear(visitor_id, now)
+                                            phone=dialog[8], now=now,
+                                            expected_draft_revision=_draft_revision_context.get())
+        _draft_revision_context.set(_draft_revision_context.get() + 1)
+        if dialog[5]:
+            self._save(visitor_id, "purpose", now)
+        else:
+            self._clear(visitor_id, now)
         return Reply("Данные сохранены.", (_row(("Мои данные", "profile")),))
 
     @staticmethod

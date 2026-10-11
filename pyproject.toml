@@ -10,7 +10,8 @@ requires-python = ">=3.12"
 dependencies = ["tzdata>=2025.2,<2028", "google-auth-oauthlib>=1.2,<2", "aiogram>=3.31,<4"]
 
 [project.optional-dependencies]
-test = ["pytest>=8,<10"]
+test = ["pytest>=8,<10", "httpx==0.28.1"]
+api = ["fastapi==0.143.0", "starlette==1.7.0", "pydantic==2.13.5", "uvicorn==0.54.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

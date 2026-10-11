@@ -125,6 +125,9 @@ def render_notice(path: Path, notice: Notice, administrator_id: int) -> tuple[in
     elif kind in ("reminder_24h", "reminder_2h"):
         text = f"Напоминание: встреча №{booking['id']} {when}. Ссылка: {booking['video_url']}."
         recipient = notice.visitor_id
+    elif kind == "google_connection_attention":
+        text = "Подключение Google Календаря требует внимания. Проверьте доступ в разделе интеграции Mini App."
+        recipient = administrator_id
     elif kind == "calendar_attention":
         text = f"Требует внимания заявка №{booking['id']}: сбой синхронизации с Google Календарем."
         recipient = administrator_id

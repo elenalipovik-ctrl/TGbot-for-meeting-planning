@@ -74,7 +74,7 @@ def test_schema_migration_integrity_and_restart(database: Path) -> None:
     initialize_database(database)
     connection = connect(database)
     try:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == database_module.SCHEMA_VERSION
         assert connection.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
         assert connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
         assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
@@ -278,7 +278,7 @@ def test_upgrade_from_stage_one_preserves_booking_and_meeting(tmp_path: Path) ->
     initialize_database(path)
     connection = connect(path)
     try:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == database_module.SCHEMA_VERSION
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
         assert connection.execute(
             "SELECT google_event_id FROM meetings WHERE booking_id = 1"
@@ -342,7 +342,7 @@ def test_upgrade_removes_old_email_queue_and_rejects_new_email_notices(
     monkeypatch.setattr(database_module, "SCHEMA_VERSION", 8)
     initialize_database(path)
     with connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == database_module.SCHEMA_VERSION
         assert connection.execute("SELECT channel FROM notifications").fetchall() == [
             ("telegram",)]
         with pytest.raises(sqlite3.IntegrityError):
