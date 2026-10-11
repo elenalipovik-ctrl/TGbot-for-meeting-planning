@@ -16,6 +16,7 @@ from fastapi.security import HTTPBearer
 from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 
+from ..technical_log import log_event
 from ..calendar_flow import confirm_with_google
 from ..commands import Commands
 from ..database import SCHEMA_VERSION
@@ -290,7 +291,9 @@ def create_app(service, calendar, config, *, clock=time.time):
         peer = request.client.host if request.client else "unknown"
         store.rate("auth:"+peer,config.security.auth_per_minute,now())
         identity = verify_init_data(body.init_data,config.bot_token,now=now(),max_age=config.security.init_max_age,
-                                    future_skew=config.security.future_skew)
+                                    future_skew=config.security.future_skew,
+                                    on_reject=lambda code: log_event(service.logger,"telegram_auth_rejected",
+                                        code=code,request_id=request.state.request_id,component="api"))
         require_user(identity.telegram_id)
         return response(request,store.exchange(identity,now()))
 

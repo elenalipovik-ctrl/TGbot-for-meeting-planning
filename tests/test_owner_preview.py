@@ -96,3 +96,58 @@ def test_menu_update_and_restore_never_change_default(tmp_path, monkeypatch):
     assert target["type"] == "web_app" and target["web_app"]["url"] == ORIGIN + "/app/"
     assert menu.update_menu(env, restore=True) == {"type":"commands"}
     assert len(writes) == 2 and default == {"type":"commands"}
+
+
+def test_verified_clock_preserves_auth_ttl_despite_wall_clock_skew(tmp_path):
+    from email.utils import formatdate
+    from meeting_bot.owner_preview import telegram_clock
+    from meeting_bot.api.app import create_app
+    from meeting_bot.api.telegram_auth import verify_init_data
+    from meeting_bot.api.errors import ApiError
+    h = Harness(tmp_path)
+    actual = h.now
+    monotonic = [100.0]
+    wall = [actual + 459]
+    clock = telegram_clock(formatdate(actual, usegmt=True), monotonic=lambda:monotonic[0], system_time=lambda:wall[0])
+    with pytest.raises(ApiError):
+        verify_init_data(signed(ADMIN, actual), TOKEN, now=wall[0], max_age=300, future_skew=30)
+    h.config = replace(h.config, allowed_user_ids=frozenset({ADMIN}))
+    client = TestClient(create_app(h.service, h.calendar, h.config, clock=clock))
+    result = client.post(P + "/session", json={"init_data":signed(ADMIN, actual)})
+    assert result.status_code == 200
+    assert result.json()["server_time"] == actual
+    assert result.json()["data"]["expires_at"] == actual + 1800
+    # OS time jumps have no effect; elapsed time still expires old auth and sessions.
+    wall[0] += 3600
+    assert clock() == actual
+    monotonic[0] += 301
+    old = client.post(P + "/session", json={"init_data":signed(ADMIN, actual, extra={"query_id":"old-second"})})
+    assert old.status_code == 401
+    monotonic[0] += 1499
+    headers = {"Authorization":"Bearer " + result.json()["data"]["bearer"]}
+    assert client.get(P + "/bootstrap", headers=headers).status_code == 401
+
+
+@pytest.mark.parametrize("header", [None, "invalid", "Sun, 11 Oct 2026 14:00:00", "Sun, 11 Oct 2026 14:00:00 +0300"])
+def test_verified_clock_rejects_missing_or_non_utc_date(header):
+    from meeting_bot.owner_preview import telegram_clock
+    with pytest.raises(ValueError):
+        telegram_clock(header)
+
+
+def test_verified_clock_rejects_excessive_discrepancy():
+    from email.utils import formatdate
+    from meeting_bot.owner_preview import telegram_clock
+    with pytest.raises(ValueError):
+        telegram_clock(formatdate(1000000, usegmt=True), system_time=lambda:1000901)
+
+
+def test_auth_diagnostic_never_includes_raw_input():
+    from meeting_bot.api.telegram_auth import verify_init_data
+    from meeting_bot.api.errors import ApiError
+    codes = []
+    now = at(5, 10)
+    for raw in ("private-value", signed(ADMIN, now-301), signed(ADMIN, now+31), signed(ADMIN, now, token="wrong-secret")):
+        with pytest.raises(ApiError):
+            verify_init_data(raw, TOKEN, now=now, max_age=300, future_skew=30, on_reject=codes.append)
+    assert codes == ["AUTH_FORMAT", "AUTH_TOO_OLD", "AUTH_IN_FUTURE", "AUTH_SIGNATURE"]

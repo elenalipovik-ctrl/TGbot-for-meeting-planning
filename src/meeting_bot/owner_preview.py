@@ -7,6 +7,7 @@ local-preview persona endpoint, through the agreed HTTPS endpoint.
 import argparse
 import json
 import logging.config
+from email.utils import parsedate_to_datetime
 from datetime import datetime, time as daytime, timedelta
 from pathlib import Path
 import re
@@ -48,14 +49,38 @@ def owner_settings(env_file):
     return database, administrator, config
 
 
+def telegram_clock(date_header, *, monotonic=time.monotonic, system_time=time.time):
+    """Preview-only clock anchored to the verified HTTPS response, never user input.
+
+    Do not alter the OS clock or enlarge Telegram authentication age limits.
+    Monotonic elapsed time prevents later wall-clock corrections changing TTLs.
+    """
+    try:
+        value = parsedate_to_datetime(date_header)
+        if value.tzinfo is None or value.utcoffset() != timedelta(0):
+            raise ValueError("Expected UTC HTTP date")
+        epoch = value.timestamp()
+        if abs(epoch - system_time()) > 900:
+            raise ValueError("Clock discrepancy exceeds preview limit")
+        anchor = monotonic()
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("Verified Telegram server time is required") from None
+    return lambda: epoch + monotonic() - anchor
+
+
 def verify_owner_bot(token):
     # Never expose an upstream exception, request URL, or returned body.
     try:
+        started = time.monotonic()
         request = Request("https://api.telegram.org/bot" + token + "/getMe", data=b"", method="POST")
         with urlopen(request, timeout=15) as response:
             result = json.loads(response.read(16384))
+            date_header = response.headers.get("Date")
         if result.get("ok") is not True or result["result"]["username"].lower() != "mymeetplanning_bot":
             raise ValueError("Unexpected bot")
+        if time.monotonic() - started > 5:
+            raise ValueError("Server time request took too long")
+        return telegram_clock(date_header)
     except Exception:
         raise ValueError("Owner bot verification failed") from None
 
@@ -125,12 +150,12 @@ def main(argv=None):
         assets = Path(__file__).resolve().parents[2] / "mini_app" / "dist"
         if not (assets / "index.html").is_file():
             raise ValueError("Build the frontend first")
-        verify_owner_bot(config.bot_token)
+        clock = verify_owner_bot(config.bot_token)
         logging.config.dictConfig({"version":1,"disable_existing_loggers":True,
             "handlers":{"silent":{"class":"logging.NullHandler"}},"root":{"handlers":["silent"],"level":"WARNING"}})
         logger = configure_logging(database.parent / "api.log")
         import uvicorn
-        uvicorn.run(create_owner_app(database, administrator, config, assets=assets, logger=logger),
+        uvicorn.run(create_owner_app(database, administrator, config, assets=assets, logger=logger, clock=clock),
                     host="127.0.0.1", port=args.port, access_log=False, proxy_headers=False,
                     server_header=False, log_config=None)
     except (ValueError, RuntimeError, OSError):
