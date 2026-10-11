@@ -22,11 +22,16 @@ def telegram_request(token, method, payload):
         raise ValueError("Telegram menu operation failed; credentials are not logged") from None
 
 
-def update_menu(env_file, *, restore=False):
+def update_menu(env_file, *, restore=False, visitor=False):
     database, owner, config = owner_settings(env_file)
+    if visitor:
+        candidates = config.allowed_user_ids - {owner}
+        if len(candidates) != 1:
+            raise ValueError("A verified test visitor is required")
+        owner = next(iter(candidates))
     verify_owner_bot(config.bot_token)
     call = lambda method, payload: telegram_request(config.bot_token, method, payload)
-    snapshot = database.parent / "previous-menu.json"
+    snapshot = database.parent / ("previous-menu-visitor.json" if visitor else "previous-menu.json")
     if snapshot.is_symlink() or (snapshot.exists() and snapshot.stat().st_nlink > 1):
         raise ValueError("Unsafe menu snapshot")
     default_before = call("getChatMenuButton", {})
@@ -55,13 +60,14 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description="Owner-only Mini App menu button")
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--restore", action="store_true")
+    parser.add_argument("--visitor", action="store_true", help="Configure only the explicitly paired test visitor")
     args=parser.parse_args(argv)
     try:
-        update_menu(args.env_file, restore=args.restore)
+        update_menu(args.env_file, restore=args.restore, visitor=args.visitor)
     except (ValueError, OSError, KeyError):
         print("Private menu update failed; previous settings are retained locally for recovery.", file=sys.stderr)
         return 1
-    print("Owner private menu verified; default menu is unchanged.")
+    print("Private test menu verified; default menu is unchanged.")
     return 0
 
 

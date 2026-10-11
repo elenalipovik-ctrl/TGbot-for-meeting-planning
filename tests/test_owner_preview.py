@@ -151,3 +151,52 @@ def test_auth_diagnostic_never_includes_raw_input():
         with pytest.raises(ApiError):
             verify_init_data(raw, TOKEN, now=now, max_age=300, future_skew=30, on_reject=codes.append)
     assert codes == ["AUTH_FORMAT", "AUTH_TOO_OLD", "AUTH_IN_FUTURE", "AUTH_SIGNATURE"]
+
+
+def test_paired_visitor_is_visitor_and_third_account_denied(tmp_path):
+    from meeting_bot.owner_preview import owner_settings, create_owner_app
+    env = tmp_path / ".env-miniapp-owner"
+    env.write_text(f"MINI_APP_MODE=owner-preview\nTELEGRAM_BOT_TOKEN={TOKEN}\nBOT_ADMIN_ID={ADMIN}\nMINI_APP_VISITOR_ID={VISITOR}\nMINI_APP_ORIGIN={ORIGIN}\n", encoding="utf8")
+    database, owner, config = owner_settings(env)
+    assert config.allowed_user_ids == frozenset({ADMIN, VISITOR})
+    app = create_owner_app(database, owner, config, clock=lambda: at(5,10))
+    client = TestClient(app)
+    login = client.post(P + "/session", json={"init_data":signed(VISITOR, at(5,10))})
+    assert login.status_code == 200
+    headers = {"Authorization":"Bearer " + login.json()["data"]["bearer"]}
+    result = client.get(P + "/bootstrap", headers=headers).json()["data"]
+    assert result["role"] == "visitor" and result["access_status"] == "allowed"
+    assert client.get(P + "/templates", headers=headers).status_code == 200
+    assert client.get(P + "/admin/templates", headers=headers).status_code == 403
+    assert client.post(P + "/session", json={"init_data":signed(1234567890123, at(5,10))}).status_code == 403
+    # Restart must preserve a block made by the administrator, not grant access again.
+    app.state.service.decide_access(owner, VISITOR, "blocked", at(5,10))
+    app = create_owner_app(database, owner, config, clock=lambda: at(5,10))
+    assert TestClient(app).get(P + "/me/profile", headers=headers).status_code == 403
+
+
+@pytest.mark.parametrize("visitor", ["0", "-1", "bad", str(ADMIN), str(2**63)])
+def test_paired_visitor_id_is_strict(tmp_path, visitor):
+    env = tmp_path / ".env-miniapp-owner"
+    env.write_text(f"MINI_APP_MODE=owner-preview\nTELEGRAM_BOT_TOKEN={TOKEN}\nBOT_ADMIN_ID={ADMIN}\nMINI_APP_VISITOR_ID={visitor}\nMINI_APP_ORIGIN={ORIGIN}\n", encoding="utf8")
+    with pytest.raises(ValueError):
+        owner_settings(env)
+
+
+def test_visitor_menu_only_changes_visitor_and_can_restore(tmp_path, monkeypatch):
+    import meeting_bot.owner_preview_menu as menu
+    env = tmp_path / ".env-miniapp-owner"
+    env.write_text(f"MINI_APP_MODE=owner-preview\nTELEGRAM_BOT_TOKEN={TOKEN}\nBOT_ADMIN_ID={ADMIN}\nMINI_APP_VISITOR_ID={VISITOR}\nMINI_APP_ORIGIN={ORIGIN}\n", encoding="utf8")
+    menus = {None:{"type":"commands"}, ADMIN:{"type":"web_app","text":"Owner","web_app":{"url":ORIGIN+"/app/"}}, VISITOR:{"type":"commands"}}
+    before_owner = dict(menus[ADMIN])
+    def call(token, method, payload):
+        if method == "getChatMenuButton": return dict(menus[payload.get("chat_id")])
+        assert payload["chat_id"] == VISITOR
+        menus[VISITOR] = payload["menu_button"]
+        return True
+    monkeypatch.setattr(menu, "verify_owner_bot", lambda token: None)
+    monkeypatch.setattr(menu, "telegram_request", call)
+    menu.update_menu(env, visitor=True)
+    assert menus[VISITOR]["type"] == "web_app" and menus[ADMIN] == before_owner
+    menu.update_menu(env, visitor=True, restore=True)
+    assert menus[VISITOR] == {"type":"commands"} and menus[None] == {"type":"commands"}

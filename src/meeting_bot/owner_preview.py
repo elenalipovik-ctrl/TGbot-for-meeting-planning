@@ -1,4 +1,4 @@
-"""Owner-only real Telegram authentication with synthetic data and no deliveries.
+"""Closed real Telegram authentication for the owner and one optional visitor with synthetic data and no deliveries.
 
 This entry point never polls Telegram, starts a notification worker, reads the
 working .env implicitly, or connects to Google. Expose only this app, never the
@@ -43,9 +43,15 @@ def owner_settings(env_file):
     database = folder / "synthetic.sqlite"
     if folder.resolve() != folder or database.is_symlink() or (database.exists() and database.stat().st_nlink > 1):
         raise ValueError("Unsafe owner preview storage")
+    allowed = {administrator}
+    visitor = values.get("MINI_APP_VISITOR_ID", "")
+    if visitor:
+        if not visitor.isdecimal() or not 0 < int(visitor) < 2**63 or int(visitor) == administrator:
+            raise ValueError("Expected a separate visitor ID")
+        allowed.add(int(visitor))
     origin = values.get("MINI_APP_ORIGIN", "")
     config = ApiConfig(token, "owner-preview-v1", origin + "/owner-preview/policy", (origin,),
-                       allowed_user_ids=frozenset({administrator}), test_environment=True)
+                       allowed_user_ids=frozenset(allowed), test_environment=True)
     return database, administrator, config
 
 
@@ -122,11 +128,18 @@ def seed_owner(service, now):
 
 
 def create_owner_app(database, administrator, config, *, assets=None, clock=time.time, logger=None):
-    if config.allowed_user_ids != frozenset({administrator}) or not config.test_environment:
+    if (config.allowed_user_ids is None or administrator not in config.allowed_user_ids
+            or len(config.allowed_user_ids) not in (1, 2) or not config.test_environment):
         raise ValueError("Owner-only test configuration is required")
     service = BookingService(database, administrator_id=administrator, logger=logger)
     service.initialize()
     seed_owner(service, int(clock()))
+    for visitor in config.allowed_user_ids - {administrator}:
+        with connect(service.path) as c:
+            exists = c.execute("SELECT 1 FROM visitors WHERE telegram_id=?", (visitor,)).fetchone()
+        if not exists:
+            service.request_access(visitor, None, int(clock()))
+            service.decide_access(administrator, visitor, "allowed", int(clock()))
     app = create_app(service, PreviewCalendar(), config, clock=clock)
     # No persona endpoint, notification worker, polling, or Google client is installed.
     from starlette.responses import HTMLResponse
@@ -139,7 +152,7 @@ def create_owner_app(database, administrator, config, *, assets=None, clock=time
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Owner-only Mini App preview using the existing bot identity")
+    parser = argparse.ArgumentParser(description="Closed Mini App preview using the existing bot identity")
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--port", type=int, default=8768)
     args = parser.parse_args(argv)
