@@ -14,3 +14,9 @@ __pycache__/
 *.sqlite-shm
 *client_secret*.json
 *token*.json
+
+mini_app/node_modules/
+mini_app/dist/
+mini_app/*.tsbuildinfo
+mini_app/tests/
+.env.*

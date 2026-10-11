@@ -2,7 +2,7 @@ name: Verify meeting bot
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 permissions:
@@ -25,8 +25,25 @@ jobs:
             exit 1
           fi
       - name: Install dependencies
-        run: python -m pip install -e '.[test]'
+        run: python -m pip install -e '.[test,api]'
       - name: Run tests
         run: python -m pytest -q
       - name: Compile source
         run: python -m compileall -q src scripts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Build and test Mini App
+        working-directory: mini_app
+        run: |
+          npm install --global pnpm@11.25.0
+          pnpm install --frozen-lockfile
+          pnpm test
+          pnpm build
+      - name: Validate Compose and build release image
+        run: |
+          docker compose config --quiet
+          docker build --tag meeting-bot:ci .
+      - name: Smoke release image without external network or working data
+        run: |
+          docker run --rm --network=none --read-only --tmpfs /tmp:rw,uid=10001,gid=10001,mode=700 --mount type=bind,source="$PWD/scripts/check_release_image.py",target=/image-check.py,readonly meeting-bot:ci python /image-check.py

@@ -45,3 +45,16 @@ services:
   worker:
     <<: *app
     command: ["python", "scripts/run_server.py", "worker"]
+  api:
+    <<: *app
+    command: ["python", "scripts/run_server.py", "api"]
+    ports:
+      - "127.0.0.1:8770:8770"
+    cpus: 0.50
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8770/health/ready', timeout=3).close()"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3

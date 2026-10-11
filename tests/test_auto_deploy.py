@@ -69,6 +69,13 @@ def test_build_context_is_readable_by_unprivileged_image_user(tmp_path, monkeypa
         (source / name).write_text(name, encoding="utf-8")
     for name in ("check_server_readiness.py", "run_server.py"):
         (source / "scripts" / name).write_text(name, encoding="utf-8")
+    frontend = source / "mini_app"
+    frontend.mkdir()
+    for name in ("package.json", "pnpm-lock.yaml", "index.html", "tsconfig.json", "vite.config.ts"):
+        (frontend / name).write_text(name, encoding="utf-8")
+    for name in ("src", "public"):
+        (frontend / name).mkdir()
+    (frontend / "src" / "App.tsx").write_text("export {};", encoding="utf-8")
     package = source / "src" / "meeting_bot"
     (package / "__init__.py").write_text("", encoding="utf-8")
     package.chmod(0o700)
@@ -112,3 +119,11 @@ def test_failed_start_restores_old_image(tmp_path, monkeypatch):
         auto_deploy.deploy(SHA, OTHER)
     assert checked == ["new", "old"]
     assert ("docker", "tag", "old", auto_deploy.IMAGE) in commands
+
+
+def test_compose_recreates_api_with_bot_and_worker(monkeypatch):
+    calls = []
+    monkeypatch.setattr(auto_deploy, "command", lambda *args, **kwargs: calls.append(args))
+    auto_deploy.compose_up()
+    assert calls[0][-3:] == ("bot", "worker", "api")
+    assert auto_deploy.CONTAINERS[-1] == "meeting-bot-api-1"

@@ -48,6 +48,11 @@ def code_archive() -> tuple[bytes, int]:
         "scripts/auto_deploy.py", "deploy/meeting-bot-auto-deploy.service",
         "deploy/meeting-bot-auto-deploy.timer",
     )]
+    # Only frontend source/build inputs; never node_modules, dist or local identities.
+    paths.extend(ROOT / "mini_app" / name for name in (
+        "package.json", "pnpm-lock.yaml", "index.html", "tsconfig.json", "vite.config.ts"))
+    for folder in ("src", "public"):
+        paths.extend(path for path in (ROOT / "mini_app" / folder).rglob("*") if path.is_file())
     paths.extend(
         path for path in (ROOT / "src").rglob("*")
         if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"

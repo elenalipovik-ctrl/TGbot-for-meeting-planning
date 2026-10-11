@@ -32,7 +32,7 @@ BASELINE = CONTROL / "last_seen_sha"
 LOCK = CONTROL / "lock"
 IMAGE = "meeting-bot:local"
 ROLLBACK_IMAGE = "meeting-bot:rollback"
-CONTAINERS = ("meeting-bot-bot-1", "meeting-bot-worker-1")
+CONTAINERS = ("meeting-bot-bot-1", "meeting-bot-worker-1", "meeting-bot-api-1")
 MIN_FREE_BYTES = 1_000_000_000
 MIN_AVAILABLE_KIB = 250_000
 
@@ -174,13 +174,15 @@ def validate_source(source: Path, baseline: str, sha: str) -> None:
     for name in (
         "pyproject.toml", "README.md", "src",
         "scripts/check_server_readiness.py", "scripts/run_server.py",
+        "mini_app/package.json", "mini_app/pnpm-lock.yaml", "mini_app/src", "mini_app/public",
     ):
         path = source / name
         if not path.exists() or path.is_symlink():
             raise AutoDeployError("runtime_file_missing")
-    for path in (source / "src").rglob("*"):
-        if path.is_symlink():
-            raise AutoDeployError("runtime_symlink")
+    for directory in ("src", "mini_app"):
+        for path in (source / directory).rglob("*"):
+            if path.is_symlink():
+                raise AutoDeployError("runtime_symlink")
 
 
 def check_resources() -> None:
@@ -205,6 +207,12 @@ def build_context(source: Path, target: Path) -> None:
     for name in ("pyproject.toml", "README.md"):
         shutil.copy2(source / name, target / name)
     shutil.copytree(source / "src", target / "src")
+    frontend = target / "mini_app"
+    frontend.mkdir()
+    for name in ("package.json", "pnpm-lock.yaml", "index.html", "tsconfig.json", "vite.config.ts"):
+        shutil.copy2(source / "mini_app" / name, frontend / name)
+    for name in ("src", "public"):
+        shutil.copytree(source / "mini_app" / name, frontend / name)
     (target / "scripts").mkdir()
     for name in ("check_server_readiness.py", "run_server.py"):
         shutil.copy2(source / "scripts" / name, target / "scripts" / name)
@@ -223,9 +231,9 @@ def preflight(image: str) -> None:
         "--mount", f"type=bind,source={APP / '.env'},target=/app/.env",
         "--mount", f"type=bind,source={APP / 'data'},target=/app/data",
         "--mount", f"type=bind,source={APP / 'logs'},target=/app/logs",
-        image, "python", "scripts/check_server_readiness.py", timeout=45,
+        image, "python", "scripts/run_server.py", "api", "--check", timeout=45,
     )
-    if "Server configuration: ready" not in output:
+    if "Server process: ready" not in output:
         raise AutoDeployError("preflight_failed")
 
 
@@ -233,7 +241,7 @@ def compose_up() -> None:
     command(
         "docker", "compose", "-f", str(APP / "compose.yaml"),
         "--project-directory", str(APP), "up", "-d", "--no-build",
-        "--force-recreate", "bot", "worker", timeout=180,
+        "--force-recreate", "bot", "worker", "api", timeout=180,
     )
 
 
@@ -249,6 +257,12 @@ def check_running(expected_image: str) -> None:
         state = json.loads(
             command("docker", "inspect", "--format", "{{json .State}}", name)
         )
+        deadline = time.monotonic() + 60
+        while name.endswith("-api-1") and state.get("Health", {}).get("Status") == "starting":
+            if time.monotonic() >= deadline:
+                raise AutoDeployError("api_readiness_timeout")
+            time.sleep(2)
+            state = json.loads(command("docker", "inspect", "--format", "{{json .State}}", name))
         used_image = command("docker", "inspect", "--format", "{{.Image}}", name)
         restarts = int(
             command("docker", "inspect", "--format", "{{.RestartCount}}", name)
@@ -256,8 +270,11 @@ def check_running(expected_image: str) -> None:
         if (
             not state.get("Running") or state.get("Restarting")
             or restarts or used_image != expected_image
+            or (name.endswith("-api-1") and state.get("Health", {}).get("Status") != "healthy")
         ):
             raise AutoDeployError("container_unhealthy")
+    command("docker", "exec", "meeting-bot-api-1", "python", "-c",
+            "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8770/health/ready', timeout=5).close()")
     connection = sqlite3.connect(
         f"file:{APP / 'data' / 'bot.sqlite'}?mode=ro", uri=True, timeout=5
     )

@@ -44,7 +44,7 @@ from .telegram_auth import verify_init_data
 
 def create_app(service, calendar, config, *, clock=time.time):
     if not service.path.is_file():
-        raise RuntimeError("Explicit initialized test database is required")
+        raise RuntimeError("Explicit initialized database is required")
     c = service._connect()
     try:
         if c.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
